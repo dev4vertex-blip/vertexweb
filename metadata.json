@@ -1,0 +1,6 @@
+{
+  "name": "VERTEX",
+  "description": "India's premier Home & Office Repair, Maintenance, On-Demand Services and AMC platform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
