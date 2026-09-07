@@ -174,8 +174,20 @@ export async function getDb(): Promise<{
     pool: null,
   };
 
+  const noOp = {
+    findMany: async () => [],
+    findFirst: async () => null,
+    findUnique: async () => null,
+    create: async (d: any) => d?.data ?? {},
+    update: async (d: any) => d?.data ?? {},
+    delete: async () => ({}),
+  };
+  const mockDrizzle = new Proxy({}, {
+    get: (_, prop) => (prop === 'query' ? new Proxy({}, { get: () => noOp }) : async () => []),
+  });
+
   return {
-    db: null,
+    db: mockDrizzle,
     client: fallbackClient,
     pglite: fallbackClient,
     pool: null,
