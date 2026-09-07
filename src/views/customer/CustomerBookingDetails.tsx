@@ -17,18 +17,23 @@ import {
   UserCheck,
   XCircle,
   HelpCircle,
+  Star,
 } from 'lucide-react';
 
 interface CustomerBookingDetailsProps {
   booking: Booking;
   onBack: () => void;
   onSupportClick: () => void;
+  onViewInvoice?: () => void;
+  onRateService?: () => void;
 }
 
 export const CustomerBookingDetails: React.FC<CustomerBookingDetailsProps> = ({
   booking,
   onBack,
   onSupportClick,
+  onViewInvoice,
+  onRateService,
 }) => {
   const { cancelBooking } = useApp();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
@@ -203,26 +208,52 @@ export const CustomerBookingDetails: React.FC<CustomerBookingDetailsProps> = ({
       </Card>
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-between pt-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onSupportClick}
-          leftIcon={<HelpCircle className="w-4 h-4" />}
-        >
-          Need Help?
-        </Button>
-
-        {booking.status !== 'completed' && booking.status !== 'cancelled' && (
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-2">
           <Button
-            variant="danger"
+            variant="outline"
             size="sm"
-            onClick={() => setShowCancelDialog(true)}
-            leftIcon={<XCircle className="w-4 h-4" />}
+            onClick={onSupportClick}
+            leftIcon={<HelpCircle className="w-4 h-4" />}
           >
-            Cancel Booking
+            Need Help?
           </Button>
-        )}
+
+          {onViewInvoice && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onViewInvoice}
+              leftIcon={<FileText className="w-4 h-4" />}
+            >
+              Tax Invoice
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {booking.status === 'completed' && onRateService && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onRateService}
+              leftIcon={<Star className="w-4 h-4" />}
+            >
+              Rate Service
+            </Button>
+          )}
+
+          {booking.status !== 'completed' && booking.status !== 'cancelled' && (
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setShowCancelDialog(true)}
+              leftIcon={<XCircle className="w-4 h-4" />}
+            >
+              Cancel Booking
+            </Button>
+          )}
+        </div>
       </div>
 
       <ConfirmDialog
@@ -230,7 +261,7 @@ export const CustomerBookingDetails: React.FC<CustomerBookingDetailsProps> = ({
         onClose={() => setShowCancelDialog(false)}
         onConfirm={handleConfirmCancel}
         title="Cancel this booking?"
-        description="Are you sure you want to cancel booking VTX-84920? A technician may have already been dispatched."
+        description={`Are you sure you want to cancel booking ${booking.id}? A technician may have already been dispatched.`}
         confirmText="Yes, Cancel Booking"
         cancelText="Keep Booking"
         variant="danger"

@@ -660,6 +660,126 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
           </div>
         );
 
+      case 'crm':
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Total Leads in Pipeline</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">84 Leads</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Pipeline Value</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">₹34,50,000</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Converted This Month</span>
+                <div className="text-2xl font-black text-blue-600 mt-1">28 Accounts</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Lead-to-AMC Win Rate</span>
+                <div className="text-2xl font-black text-purple-600 mt-1">36.8%</div>
+              </Card>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Lead ID</TableHead>
+                  <TableHead>Prospect / Client</TableHead>
+                  <TableHead>Service Required</TableHead>
+                  <TableHead>Deal Size</TableHead>
+                  <TableHead>Sales Owner</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[
+                  { id: 'LEAD-901', name: 'DLF CyberParks Phase 3', req: 'Annual HVAC & Electrical AMC', val: '₹4,50,000', owner: 'Karan Mehra', stage: 'Contract Proposal', status: 'In Negotiation' },
+                  { id: 'LEAD-902', name: 'Prestige Ozone Society', req: 'Water Purifier & Plumbing AMC', val: '₹2,80,000', owner: 'Vivek Nair', stage: 'Site Inspection', status: 'Hot' },
+                  { id: 'LEAD-903', name: 'Tech Mahindra SEZ Hub', req: 'Complete Appliance Maintenance', val: '₹6,20,000', owner: 'Rohan Deshmukh', stage: 'Quote Submitted', status: 'Warm' },
+                  { id: 'LEAD-904', name: 'Oberoi Sky City Residencies', req: 'Residential AMC (140 Flats)', val: '₹8,90,000', owner: 'Ankita Sen', stage: 'Initial Meeting', status: 'New' },
+                ].map((lead, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono font-bold text-xs text-slate-900">{lead.id}</TableCell>
+                    <TableCell className="font-bold text-slate-900">{lead.name}</TableCell>
+                    <TableCell>{lead.req}</TableCell>
+                    <TableCell className="font-extrabold text-emerald-600">{lead.val}</TableCell>
+                    <TableCell className="font-medium text-slate-700">{lead.owner}</TableCell>
+                    <TableCell>{lead.stage}</TableCell>
+                    <TableCell>
+                      <Badge variant={lead.status === 'Hot' ? 'danger' : lead.status === 'In Negotiation' ? 'warning' : 'primary'} size="sm">
+                        {lead.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        );
+
+      case 'promotions':
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Active Coupons</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">6 Codes</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Total Redemptions</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">1,420 Uses</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Discounts Distributed</span>
+                <div className="text-2xl font-black text-blue-600 mt-1">₹2,84,000</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Avg Basket Lift</span>
+                <div className="text-2xl font-black text-purple-600 mt-1">+24.5%</div>
+              </Card>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Coupon Code</TableHead>
+                  <TableHead>Campaign Name</TableHead>
+                  <TableHead>Discount Value</TableHead>
+                  <TableHead>Min Order</TableHead>
+                  <TableHead>Usage Count</TableHead>
+                  <TableHead>Valid Until</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {[
+                  { code: 'VERTEXFIRST', campaign: 'New Customer Welcome', val: '₹150 OFF', min: '₹499', uses: '840 / 1000', exp: '31 Dec 2026', st: 'Active' },
+                  { code: 'ACCHILL20', campaign: 'Summer AC Festival', val: '20% OFF (Max ₹300)', min: '₹799', uses: '412 / 500', exp: '30 Oct 2026', st: 'Active' },
+                  { code: 'AMCSHIELD500', campaign: 'Annual Contract Special', val: '₹500 Flat OFF', min: '₹3,999', uses: '128 / 200', exp: '15 Nov 2026', st: 'Active' },
+                  { code: 'HOMESAFE10', campaign: 'Electrical Safety Drive', val: '10% OFF', min: '₹350', uses: '40 / 100', exp: '20 Sep 2026', st: 'Expiring Soon' },
+                ].map((promo, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-mono font-bold text-xs text-blue-600 bg-blue-50/50 px-2 py-1 rounded w-fit">{promo.code}</TableCell>
+                    <TableCell className="font-bold text-slate-900">{promo.campaign}</TableCell>
+                    <TableCell className="font-extrabold text-emerald-600">{promo.val}</TableCell>
+                    <TableCell>{promo.min}</TableCell>
+                    <TableCell className="font-medium text-slate-700">{promo.uses}</TableCell>
+                    <TableCell>{promo.exp}</TableCell>
+                    <TableCell>
+                      <Badge variant={promo.st === 'Active' ? 'success' : 'warning'} size="sm">
+                        {promo.st}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        );
+
       default:
         // Default generic SaaS view for other views
         return (

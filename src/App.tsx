@@ -1,16 +1,33 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { DemoRoleBar } from './components/common/DemoRoleBar';
 import { ToastContainer } from './components/ui/Toast';
+import { AdminApp } from './apps/admin/AdminApp';
+import { CustomerAppRoot } from './apps/customer/CustomerAppRoot';
+import { TechnicianAppRoot } from './apps/technician/TechnicianAppRoot';
 import { LoginView } from './views/LoginView';
-import { CustomerApp } from './views/customer/CustomerApp';
-import { TechnicianApp } from './views/technician/TechnicianApp';
-import { AdminPlatform } from './views/admin/AdminPlatform';
+import { getAppTarget, isDemoLoginEnabled } from './shared/config';
 
 const AppContent: React.FC = () => {
   const { currentAppRole, setAppRole, toasts, removeToast } = useApp();
   const { user, isAuthenticated, isLoading } = useAuth();
+
+  // Determine target application: either through build flag VITE_APP_TARGET
+  // or dynamically via path when previewing the unified multi-app repository.
+  const activeAppTarget = useMemo(() => {
+    const configuredTarget = getAppTarget();
+    if (configuredTarget !== 'all') {
+      return configuredTarget;
+    }
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname.toLowerCase();
+      if (pathname.startsWith('/admin')) return 'admin';
+      if (pathname.startsWith('/customer')) return 'customer';
+      if (pathname.startsWith('/technician') || pathname.startsWith('/partner')) return 'technician';
+    }
+    return 'all';
+  }, []);
 
   // Synchronize currentAppRole with authenticated user session
   useEffect(() => {
@@ -46,28 +63,61 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Active view router
-  const renderActiveView = () => {
+  // 1. Standalone Admin Deployment Target
+  if (activeAppTarget === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white font-sans flex flex-col">
+        {isDemoLoginEnabled() && <DemoRoleBar />}
+        <AdminApp />
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      </div>
+    );
+  }
+
+  // 2. Standalone Customer Deployment Target (Mobile App Shell)
+  if (activeAppTarget === 'customer') {
+    return (
+      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
+        {isDemoLoginEnabled() && <DemoRoleBar />}
+        <CustomerAppRoot />
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      </div>
+    );
+  }
+
+  // 3. Standalone Technician Deployment Target (Partner Mobile Shell)
+  if (activeAppTarget === 'technician') {
+    return (
+      <div className="min-h-screen bg-slate-900 text-white font-sans flex flex-col">
+        {isDemoLoginEnabled() && <DemoRoleBar />}
+        <TechnicianAppRoot />
+        <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      </div>
+    );
+  }
+
+  // 4. Unified Workspace (Default development mode with seamless role switching)
+  const renderUnifiedView = () => {
     if (!isAuthenticated || !user || currentAppRole === 'login') {
       return <LoginView />;
     }
     if (user.role === 'CUSTOMER' || currentAppRole === 'customer') {
-      return <CustomerApp />;
+      return <CustomerAppRoot />;
     }
     if (user.role === 'TECHNICIAN' || currentAppRole === 'technician') {
-      return <TechnicianApp />;
+      return <TechnicianAppRoot />;
     }
-    return <AdminPlatform />;
+    return <AdminApp />;
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-100 selection:text-blue-900">
       {/* Top Demo Bar for rapid switching between Customer, Partner & Admin apps */}
-      <DemoRoleBar />
+      {isDemoLoginEnabled() && <DemoRoleBar />}
 
-      {/* Main View Router based on current active role */}
+      {/* Main View Router */}
       <div className="flex-1 flex flex-col">
-        {renderActiveView()}
+        {renderUnifiedView()}
       </div>
 
       {/* Global Notification Toasts */}

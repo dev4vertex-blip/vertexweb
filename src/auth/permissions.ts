@@ -129,6 +129,8 @@ export const ADMIN_ROUTE_PERMISSIONS: Record<string, PermissionKey[]> = {
   '/admin/customers': ['CUSTOMER_VIEW'],
   '/admin/technicians': ['TECHNICIAN_VIEW'],
   '/admin/sales': ['SALES_TEAM_VIEW'],
+  '/admin/crm': ['SALES_VIEW'],
+  '/admin/promotions': ['SERVICE_VIEW'],
   '/admin/managers': ['MANAGERS_VIEW'],
   '/admin/finance': ['FINANCE_VIEW'],
   '/admin/services': ['SERVICE_VIEW'],

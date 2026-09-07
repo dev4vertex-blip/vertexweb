@@ -1,0 +1,24 @@
+{
+	"appId": "com.vertex.customer",
+	"appName": "VERTEX Customer",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": false
+	},
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": true
+	},
+	"ios": {
+		"contentInset": "always",
+		"allowsLinkPreview": false,
+		"scrollEnabled": true
+	},
+	"plugins": {
+		"Preferences": {
+			"group": "VERTEXCustomerApp"
+		},
+		"App": {}
+	}
+}

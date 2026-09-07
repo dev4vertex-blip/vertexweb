@@ -13,6 +13,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { UnauthorizedView } from '../../components/auth/UnauthorizedView';
 import { UserProfileDropdown } from '../../components/auth/UserProfileDropdown';
+import { isDemoLoginEnabled } from '../../shared/config';
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -39,6 +40,8 @@ import {
   X,
   Lock,
   Sparkles,
+  TrendingUp,
+  Tag,
 } from 'lucide-react';
 
 interface SidebarItem {
@@ -88,6 +91,20 @@ const ALL_SIDEBAR_ITEMS: SidebarItem[] = [
   },
 
   // Team & Operations
+  {
+    id: 'crm',
+    route: '/admin/crm',
+    label: 'Sales CRM & Leads',
+    icon: <TrendingUp className="w-4 h-4" />,
+    category: 'operations',
+  },
+  {
+    id: 'promotions',
+    route: '/admin/promotions',
+    label: 'Promotions & Offers',
+    icon: <Tag className="w-4 h-4" />,
+    category: 'operations',
+  },
   {
     id: 'sales-team',
     route: '/admin/sales',
@@ -217,8 +234,38 @@ export const AdminPlatform: React.FC = () => {
   const { user, canAccessRoute, loginWithCredentials } = useAuth();
   const { addToast } = useApp();
 
-  const [activeSection, setActiveSection] = useState<string>('dashboard');
+  // Initialize active section from current URL path if in browser
+  const getInitialSection = (): string => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      const match = ALL_SIDEBAR_ITEMS.find((item) => item.route.toLowerCase() === path);
+      if (match) return match.id;
+      if (path.startsWith('/admin/')) {
+        const seg = path.replace('/admin/', '').split('/')[0];
+        const matchSeg = ALL_SIDEBAR_ITEMS.find((item) => item.id === seg);
+        if (matchSeg) return matchSeg.id;
+      }
+    }
+    return 'dashboard';
+  };
+
+  const [activeSection, setActiveSection] = useState<string>(getInitialSection);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Sync with browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      const match = ALL_SIDEBAR_ITEMS.find((item) => item.route.toLowerCase() === path);
+      if (match) {
+        setActiveSection(match.id);
+      } else if (path === '/admin' || path === '/admin/') {
+        setActiveSection('dashboard');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Sync active section with window route or default
   const currentItem = ALL_SIDEBAR_ITEMS.find((i) => i.id === activeSection) || ALL_SIDEBAR_ITEMS[0];
@@ -235,7 +282,16 @@ export const AdminPlatform: React.FC = () => {
     return item ? item.label : 'Dashboard';
   };
 
-  // Quick switch between admin personas for verification
+  const navigateToSection = (itemId: string) => {
+    const item = ALL_SIDEBAR_ITEMS.find((i) => i.id === itemId);
+    setActiveSection(itemId);
+    setIsSidebarOpen(false);
+    if (item && typeof window !== 'undefined' && window.location.pathname !== item.route) {
+      window.history.pushState(null, '', item.route);
+    }
+  };
+
+  // Quick switch between admin personas for verification (only when demo enabled)
   const handleAdminRoleSwitch = async (role: UserRole) => {
     let email = 'admin@vertex.demo';
     if (role === 'MANAGER') email = 'manager@vertex.demo';
@@ -268,7 +324,7 @@ export const AdminPlatform: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setActiveSection('dashboard')}
+              onClick={() => navigateToSection('dashboard')}
               className="cursor-pointer text-left focus:outline-none"
             >
               <VertexLogo size="sm" theme="dark" />
@@ -289,30 +345,32 @@ export const AdminPlatform: React.FC = () => {
 
           {/* Right Header: Role Switcher & User Profile Dropdown */}
           <div className="flex items-center gap-3">
-            {/* Quick Role Switcher for verification */}
-            <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-              <span className="text-[11px] text-slate-400 mr-2 font-medium hidden sm:inline">
-                Test Role:
-              </span>
-              <select
-                value={user?.role || 'SUPER_ADMIN'}
-                onChange={(e) => handleAdminRoleSwitch(e.target.value as UserRole)}
-                className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer pr-1"
-              >
-                <option value="SUPER_ADMIN" className="bg-slate-900 text-white">
-                  SUPER_ADMIN (Full)
-                </option>
-                <option value="MANAGER" className="bg-slate-900 text-white">
-                  MANAGER (Ops & Fleet)
-                </option>
-                <option value="SALES" className="bg-slate-900 text-white">
-                  SALES (Catalog & AMC)
-                </option>
-                <option value="FINANCE" className="bg-slate-900 text-white">
-                  FINANCE (Payouts & Dues)
-                </option>
-              </select>
-            </div>
+            {/* Quick Role Switcher for verification - ONLY visible when demo login is enabled */}
+            {isDemoLoginEnabled() && (
+              <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
+                <span className="text-[11px] text-slate-400 mr-2 font-medium hidden sm:inline">
+                  Test Role:
+                </span>
+                <select
+                  value={user?.role || 'SUPER_ADMIN'}
+                  onChange={(e) => handleAdminRoleSwitch(e.target.value as UserRole)}
+                  className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer pr-1"
+                >
+                  <option value="SUPER_ADMIN" className="bg-slate-900 text-white">
+                    SUPER_ADMIN (Full)
+                  </option>
+                  <option value="MANAGER" className="bg-slate-900 text-white">
+                    MANAGER (Ops & Fleet)
+                  </option>
+                  <option value="SALES" className="bg-slate-900 text-white">
+                    SALES (Catalog & AMC)
+                  </option>
+                  <option value="FINANCE" className="bg-slate-900 text-white">
+                    FINANCE (Payouts & Dues)
+                  </option>
+                </select>
+              </div>
+            )}
 
             {/* Centralized User Profile Dropdown */}
             <UserProfileDropdown />
@@ -330,7 +388,7 @@ export const AdminPlatform: React.FC = () => {
         >
           <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-              <span>Navigation ({visibleItems.length}/21)</span>
+              <span>Navigation ({visibleItems.length}/{ALL_SIDEBAR_ITEMS.length})</span>
               <Badge variant={isSuperAdmin ? 'danger' : 'neutral'} size="sm">
                 {user?.role}
               </Badge>
@@ -341,10 +399,7 @@ export const AdminPlatform: React.FC = () => {
               return (
                 <button
                   key={item.id}
-                  onClick={() => {
-                    setActiveSection(item.id);
-                    setIsSidebarOpen(false);
-                  }}
+                  onClick={() => navigateToSection(item.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer text-left ${
                     isActive
                       ? 'bg-slate-900 text-white shadow-xs'
@@ -364,7 +419,7 @@ export const AdminPlatform: React.FC = () => {
               <div className="mt-4 mx-2 p-2.5 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-[11px] text-slate-500 flex items-start gap-2">
                 <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                 <span>
-                  {21 - visibleItems.length} modules restricted by {user?.role} policy.
+                  {ALL_SIDEBAR_ITEMS.length - visibleItems.length} modules restricted by {user?.role} policy.
                 </span>
               </div>
             )}

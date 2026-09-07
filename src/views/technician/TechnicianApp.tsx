@@ -17,7 +17,9 @@ import {
   User,
   Bell,
   Power,
+  ArrowLeft,
 } from 'lucide-react';
+import { useMobileNavigation } from '../../shared/navigation/MobileNavigation';
 
 export type TechnicianScreen =
   | 'dashboard'
@@ -30,12 +32,25 @@ export type TechnicianScreen =
 
 export const TechnicianApp: React.FC = () => {
   const { currentTechnician, toggleTechnicianDuty } = useApp();
-  const [currentScreen, setCurrentScreen] = useState<TechnicianScreen>('dashboard');
+
+  let mobileNav: ReturnType<typeof useMobileNavigation> | null = null;
+  try {
+    mobileNav = useMobileNavigation();
+  } catch {
+    mobileNav = null;
+  }
+
+  const [localScreen, setLocalScreen] = useState<TechnicianScreen>('dashboard');
+  const currentScreen = (mobileNav?.currentScreen as TechnicianScreen) || localScreen;
   const [selectedJob, setSelectedJob] = useState<TechnicianJob | null>(null);
 
   const navigateTo = (screen: TechnicianScreen) => {
-    setCurrentScreen(screen);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (mobileNav) {
+      mobileNav.push(screen);
+    } else {
+      setLocalScreen(screen);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleSelectJob = (job: TechnicianJob) => {
@@ -48,9 +63,20 @@ export const TechnicianApp: React.FC = () => {
       {/* Technician Header */}
       <header className="bg-white border-b border-slate-200/80 sticky top-0 sm:top-[33px] z-30 shadow-2xs">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {mobileNav && mobileNav.canGoBack && (
+              <button
+                type="button"
+                onClick={() => mobileNav?.goBack()}
+                className="p-2 -ml-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Back"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-5 h-5 text-slate-700" />
+              </button>
+            )}
             <button
-              onClick={() => navigateTo('dashboard')}
+              onClick={() => (mobileNav ? mobileNav.reset('dashboard') : navigateTo('dashboard'))}
               className="cursor-pointer text-left focus:outline-none"
             >
               <VertexLogo size="sm" />

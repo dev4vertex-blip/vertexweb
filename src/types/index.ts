@@ -221,6 +221,7 @@ export interface Booking {
 export interface TechnicianJob {
   id: string;
   bookingId: string;
+  technicianId?: string;
   customerName: string;
   customerPhone: string;
   serviceName: string;
@@ -228,7 +229,7 @@ export interface TechnicianJob {
   city: string;
   scheduledTime: string;
   date: string;
-  status: 'Assigned' | 'En Route' | 'In Progress' | 'Completed';
+  status: 'Assigned' | 'Accepted' | 'En Route' | 'Arrived' | 'In Progress' | 'Completed';
   amount: number;
   technicianCut: number;
   requiredParts?: string[];

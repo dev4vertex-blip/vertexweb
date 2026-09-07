@@ -32,6 +32,7 @@ interface CustomerHomeProps {
   onSelectService: (service: ServiceItem) => void;
   onNavigateToAMC: () => void;
   onNavigateToBookings: () => void;
+  onNavigateToOffers?: () => void;
 }
 
 export const CustomerHome: React.FC<CustomerHomeProps> = ({
@@ -39,6 +40,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
   onSelectService,
   onNavigateToAMC,
   onNavigateToBookings,
+  onNavigateToOffers,
 }) => {
   const { currentCustomer, selectedCity, setSelectedCity, bookings } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
@@ -118,6 +120,32 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
         {/* Decorative subtle background angle */}
         <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-linear-to-l from-blue-600/10 to-transparent pointer-events-none hidden sm:block" />
       </div>
+
+      {/* Promotional Offers Strip */}
+      {onNavigateToOffers && (
+        <button
+          onClick={onNavigateToOffers}
+          className="w-full p-3.5 bg-gradient-to-r from-amber-50 via-blue-50 to-indigo-50 border border-amber-200/80 rounded-2xl flex items-center justify-between text-left hover:border-amber-300 transition-all cursor-pointer shadow-xs min-h-[44px]"
+        >
+          <div className="flex items-center gap-3">
+            <span className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </span>
+            <div>
+              <div className="text-xs font-bold text-slate-900 flex flex-wrap items-center gap-1.5">
+                <span>Save up to ₹500 on home repairs with code</span>
+                <span className="bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded-md font-mono text-[11px] font-extrabold tracking-wide">
+                  VERTEXNEW
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                View 4 verified seasonal coupons & AMC warranty discounts
+              </p>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
+        </button>
+      )}
 
       {/* Ongoing Booking Alert (if any active) */}
       {activeBooking && (

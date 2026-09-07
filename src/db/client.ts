@@ -7,6 +7,8 @@ import { memoryStore } from './memoryStore.js';
 let poolInstance: pg.Pool | null = null;
 let drizzleInstance: any = null;
 let activeDatabaseUrl: string | null = null;
+let isDatabaseOnline: boolean | null = null;
+let lastConnectionCheck: number = 0;
 
 export interface DbClient {
   query: <T = any>(text: string, params?: any[]) => Promise<{ rows: T[]; rowCount: number | null }>;
@@ -15,19 +17,40 @@ export interface DbClient {
 }
 
 /**
+ * Safely normalizes and sanitizes DATABASE_URL string.
+ * Strips placeholder brackets [ ] and URL-encodes special characters in password.
+ */
+export function sanitizeDatabaseUrl(rawUrl: string): string {
+  let url = rawUrl.trim();
+  if (!url) return '';
+
+  // 1. Strip square brackets around password if present (common copy-paste issue from Supabase placeholders)
+  url = url.replace(/:\[([^\]]+)\]@/, (_, pwd) => {
+    return ':' + encodeURIComponent(pwd) + '@';
+  });
+
+  // 2. Handle percent-encoded brackets %5B ... %5D
+  url = url.replace(/:%5B([^%]+)%5D@/i, (_, pwd) => {
+    return ':' + encodeURIComponent(pwd) + '@';
+  });
+
+  return url;
+}
+
+/**
  * Validates the DATABASE_URL configuration safely without leaking credentials.
  */
-export function validateDatabaseConfig(): { ok: boolean; reason?: string } {
-  const url = process.env.DATABASE_URL?.trim();
+export function validateDatabaseConfig(): { ok: boolean; reason?: string; sanitizedUrl?: string } {
+  const rawUrl = process.env.DATABASE_URL?.trim();
 
-  if (!url) {
+  if (!rawUrl) {
     return {
       ok: false,
       reason: 'DATABASE_URL is not configured.',
     };
   }
 
-  if (url.includes('[YOUR-PASSWORD]')) {
+  if (rawUrl.includes('[YOUR-PASSWORD]')) {
     return {
       ok: false,
       reason:
@@ -35,16 +58,17 @@ export function validateDatabaseConfig(): { ok: boolean; reason?: string } {
     };
   }
 
+  const url = sanitizeDatabaseUrl(rawUrl);
+
   try {
     const parsed = new URL(url);
     if (!parsed.hostname) {
       return { ok: false, reason: 'DATABASE_URL is missing a valid hostname.' };
     }
+    return { ok: true, sanitizedUrl: url };
   } catch {
     return { ok: false, reason: 'DATABASE_URL is not a valid connection URL format.' };
   }
-
-  return { ok: true };
 }
 
 /**
@@ -56,20 +80,25 @@ export function getDatabaseUrl(): string {
   if (!validation.ok) {
     throw new Error(validation.reason);
   }
-  return process.env.DATABASE_URL!.trim();
+  return validation.sanitizedUrl || sanitizeDatabaseUrl(process.env.DATABASE_URL!.trim());
 }
 
 /**
  * Retrieves or creates a singleton PostgreSQL Pool connected to Supabase.
- * Returns null safely if configuration is invalid or placeholder is present.
+ * Returns null safely if configuration is invalid, placeholder is present, or database is offline.
  */
 export function getPool(): pg.Pool | null {
+  // If database was verified to be offline recently, avoid connection hangs
+  if (isDatabaseOnline === false && Date.now() - lastConnectionCheck < 30000) {
+    return null;
+  }
+
   const validation = validateDatabaseConfig();
   if (!validation.ok) {
     return null;
   }
 
-  const currentUrl = process.env.DATABASE_URL?.trim();
+  const currentUrl = validation.sanitizedUrl || getDatabaseUrl();
 
   // If pool already exists and URL has not changed, reuse it
   if (poolInstance && activeDatabaseUrl === currentUrl) {
@@ -86,28 +115,30 @@ export function getPool(): pg.Pool | null {
   }
 
   try {
-    const databaseUrl = currentUrl!;
-
     poolInstance = new Pool({
-      connectionString: databaseUrl,
+      connectionString: currentUrl,
       ssl: {
         rejectUnauthorized: false,
       },
       max: 10,
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
+      connectionTimeoutMillis: 5000,
     });
 
-    activeDatabaseUrl = currentUrl || null;
+    activeDatabaseUrl = currentUrl;
 
-    poolInstance.on('error', (err: any) => {
-      // Log connection issue server-side without leaking passwords
-      console.warn('[Supabase PostgreSQL Pool] Connection event:', err?.message || 'Database error');
+    poolInstance.on('error', () => {
+      // Mark offline and release pool safely without polluting server output
+      isDatabaseOnline = false;
+      if (poolInstance) {
+        poolInstance.end().catch(() => {});
+        poolInstance = null;
+        activeDatabaseUrl = null;
+      }
     });
 
     return poolInstance;
-  } catch (err: any) {
-    console.warn('[Supabase PostgreSQL Pool] Pool initialization deferred:', err?.message || 'Configuration pending');
+  } catch {
     return null;
   }
 }
@@ -125,7 +156,7 @@ export async function getDb(): Promise<{
 }> {
   const pool = getPool();
 
-  if (pool) {
+  if (pool && isDatabaseOnline !== false) {
     try {
       const client: DbClient = {
         query: async <T = any>(text: string, params?: any[]): Promise<{ rows: T[]; rowCount: number | null }> => {
@@ -203,40 +234,65 @@ export async function testDatabaseConnection(): Promise<{
   message: string;
   version?: string;
 }> {
+  lastConnectionCheck = Date.now();
   const validation = validateDatabaseConfig();
   if (!validation.ok) {
+    isDatabaseOnline = false;
     return {
       connected: false,
       message: validation.reason || 'DATABASE_URL is not configured.',
     };
   }
 
+  const url = validation.sanitizedUrl || getDatabaseUrl();
+  const probePool = new Pool({
+    connectionString: url,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 4000,
+  });
+
   try {
-    const pool = getPool();
-    if (!pool) {
-      return {
-        connected: false,
-        message: validation.reason || 'Database configuration pending.',
-      };
+    const res = await probePool.query('SELECT NOW() as now, version() as version;');
+    isDatabaseOnline = true;
+
+    if (!poolInstance || activeDatabaseUrl !== url) {
+      if (poolInstance) {
+        poolInstance.end().catch(() => {});
+      }
+      poolInstance = probePool;
+      activeDatabaseUrl = url;
+    } else {
+      probePool.end().catch(() => {});
     }
-    const res = await pool.query('SELECT NOW() as now, version() as version;');
+
     return {
       connected: true,
       message: 'Successfully connected to Supabase PostgreSQL.',
       version: res.rows[0]?.version,
     };
   } catch (err: any) {
+    isDatabaseOnline = false;
+    if (poolInstance) {
+      poolInstance.end().catch(() => {});
+      poolInstance = null;
+      activeDatabaseUrl = null;
+    }
+    probePool.end().catch(() => {});
+
     const msg = err?.message || '';
-    let sanitizedMessage = 'Unable to connect to database.';
+    let sanitizedMessage = 'Database connection could not be established.';
 
     if (msg.includes('password authentication failed')) {
       sanitizedMessage =
-        'Password authentication failed for Supabase database. Please check the database password in DATABASE_URL.';
+        'Password authentication failed for Supabase database. Please verify the database password in DATABASE_URL.';
     } else if (msg.includes('ENOTFOUND') || msg.includes('getaddrinfo')) {
       sanitizedMessage = 'Supabase host not found. Please verify the host in DATABASE_URL.';
     } else if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) {
       sanitizedMessage =
         'Connection to Supabase timed out. Please check network connectivity or connection pooler settings.';
+    } else if (msg.includes('ECONNREFUSED')) {
+      sanitizedMessage =
+        'Connection refused on database port. Ensure you are using the Supabase Connection Pooler URL.';
     }
 
     return { connected: false, message: sanitizedMessage };

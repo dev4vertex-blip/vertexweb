@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+*.jks
+*.keystore
+*.p12
+*.p8
+*.mobileprovision
+*.pem
+*.key
+google-services.json
+GoogleService-Info.plist

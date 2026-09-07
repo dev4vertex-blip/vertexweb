@@ -2,6 +2,7 @@ import { AuthSession, AuthUser, LoginCredentials, OtpCredentials, UserRole } fro
 import { ROLE_PERMISSIONS } from './permissions';
 import { auditService } from './audit';
 import { api } from '../services/api';
+import { secureStorage } from '../services/storage';
 
 const SESSION_STORAGE_KEY = 'vertex_auth_session';
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -101,7 +102,7 @@ export const DEMO_ACCOUNTS: Record<UserRole, AuthUser> = {
 export class AuthService {
   public getStoredSession(): AuthSession | null {
     try {
-      const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      const raw = secureStorage.getSession() || (typeof localStorage !== 'undefined' ? localStorage.getItem(SESSION_STORAGE_KEY) : null);
       if (!raw) return null;
 
       const session: AuthSession = JSON.parse(raw);
@@ -129,21 +130,28 @@ export class AuthService {
 
   public saveSession(session: AuthSession): void {
     try {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      const raw = JSON.stringify(session);
+      secureStorage.setSession(raw);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(SESSION_STORAGE_KEY, raw);
+      }
       if (session.token) {
         api.setToken(session.token);
       }
-    } catch (e) {
-      console.warn('Unable to persist session to localStorage', e);
+    } catch {
+      // Fail silently without exposing user or token details
     }
   }
 
   public clearSession(): void {
     try {
-      localStorage.removeItem(SESSION_STORAGE_KEY);
+      secureStorage.removeSession();
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
       api.removeToken();
-    } catch (e) {
-      console.warn('Unable to clear session', e);
+    } catch {
+      // Fail silently
     }
   }
 

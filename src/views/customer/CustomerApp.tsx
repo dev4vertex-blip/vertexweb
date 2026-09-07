@@ -13,6 +13,9 @@ import { CustomerProfile } from './CustomerProfile';
 import { CustomerAddresses } from './CustomerAddresses';
 import { CustomerNotifications } from './CustomerNotifications';
 import { CustomerSupport } from './CustomerSupport';
+import { CustomerInvoices } from './CustomerInvoices';
+import { CustomerOffers } from './CustomerOffers';
+import { CustomerReviews } from './CustomerReviews';
 import { ServiceItem, Booking } from '../../types';
 import { CITIES } from '../../data/mockData';
 import {
@@ -24,7 +27,9 @@ import {
   MapPin,
   Bell,
   ChevronDown,
+  ArrowLeft,
 } from 'lucide-react';
+import { useMobileNavigation } from '../../shared/navigation/MobileNavigation';
 
 export type CustomerScreen =
   | 'home'
@@ -38,7 +43,10 @@ export type CustomerScreen =
   | 'profile'
   | 'addresses'
   | 'notifications'
-  | 'support';
+  | 'support'
+  | 'invoices'
+  | 'offers'
+  | 'reviews';
 
 export const CustomerApp: React.FC = () => {
   const {
@@ -48,7 +56,17 @@ export const CustomerApp: React.FC = () => {
     notifications,
   } = useApp();
 
-  const [currentScreen, setCurrentScreen] = useState<CustomerScreen>('home');
+  // Support mobile navigation stack if wrapped inside CustomerAppRoot
+  let mobileNav: ReturnType<typeof useMobileNavigation> | null = null;
+  try {
+    mobileNav = useMobileNavigation();
+  } catch {
+    mobileNav = null;
+  }
+
+  const [localScreen, setLocalScreen] = useState<CustomerScreen>('home');
+  const currentScreen = (mobileNav?.currentScreen as CustomerScreen) || localScreen;
+
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | undefined>();
   const [activeService, setActiveService] = useState<ServiceItem | null>(null);
   const [activeBooking, setActiveBooking] = useState<Booking | null>(null);
@@ -56,8 +74,12 @@ export const CustomerApp: React.FC = () => {
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   const navigateTo = (screen: CustomerScreen) => {
-    setCurrentScreen(screen);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (mobileNav) {
+      mobileNav.push(screen);
+    } else {
+      setLocalScreen(screen);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleSelectService = (service: ServiceItem) => {
@@ -85,9 +107,20 @@ export const CustomerApp: React.FC = () => {
       {/* Customer Header */}
       <header className="bg-white border-b border-slate-200/80 sticky top-0 sm:top-[33px] z-30 shadow-2xs">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            {mobileNav && mobileNav.canGoBack && (
+              <button
+                type="button"
+                onClick={() => mobileNav?.goBack()}
+                className="p-2 -ml-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Back"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="w-5 h-5 text-slate-700" />
+              </button>
+            )}
             <button
-              onClick={() => navigateTo('home')}
+              onClick={() => (mobileNav ? mobileNav.reset('home') : navigateTo('home'))}
               className="text-left cursor-pointer focus:outline-none"
             >
               <VertexLogo size="sm" />
@@ -150,6 +183,7 @@ export const CustomerApp: React.FC = () => {
             onSelectService={handleSelectService}
             onNavigateToAMC={() => navigateTo('amc')}
             onNavigateToBookings={() => navigateTo('my-bookings')}
+            onNavigateToOffers={() => navigateTo('offers')}
           />
         )}
 
@@ -205,6 +239,8 @@ export const CustomerApp: React.FC = () => {
             booking={activeBooking}
             onBack={() => navigateTo('my-bookings')}
             onSupportClick={() => navigateTo('support')}
+            onViewInvoice={() => navigateTo('invoices')}
+            onRateService={() => navigateTo('reviews')}
           />
         )}
 
@@ -216,6 +252,9 @@ export const CustomerApp: React.FC = () => {
             onNavigateToAMC={() => navigateTo('amc')}
             onNavigateToNotifications={() => navigateTo('notifications')}
             onNavigateToSupport={() => navigateTo('support')}
+            onNavigateToInvoices={() => navigateTo('invoices')}
+            onNavigateToOffers={() => navigateTo('offers')}
+            onNavigateToReviews={() => navigateTo('reviews')}
           />
         )}
 
@@ -224,6 +263,34 @@ export const CustomerApp: React.FC = () => {
         {currentScreen === 'notifications' && <CustomerNotifications />}
 
         {currentScreen === 'support' && <CustomerSupport />}
+
+        {currentScreen === 'invoices' && (
+          <CustomerInvoices
+            onBack={() => navigateTo('profile')}
+            onSelectBooking={(b) => {
+              setActiveBooking(b);
+              navigateTo('booking-details');
+            }}
+          />
+        )}
+
+        {currentScreen === 'offers' && (
+          <CustomerOffers
+            onBack={() => navigateTo('home')}
+            onBookService={(cat) => {
+              setSelectedCategoryFilter(cat);
+              navigateTo('services');
+            }}
+            onSelectAMC={() => navigateTo('amc')}
+          />
+        )}
+
+        {currentScreen === 'reviews' && (
+          <CustomerReviews
+            onBack={() => navigateTo('profile')}
+            preselectedBooking={activeBooking}
+          />
+        )}
       </main>
 
       {/* Customer Bottom Navigation Bar (Responsive fixed bottom bar) */}

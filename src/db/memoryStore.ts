@@ -66,6 +66,69 @@ export interface AuditLogRecord {
   created_at: string;
 }
 
+export interface BookingRecord {
+  id: string;
+  public_id: string;
+  service_id: string;
+  service_name: string;
+  customer_id: string;
+  customer_name: string;
+  customer_phone: string;
+  technician_id: string | null;
+  technician_name: string | null;
+  technician_phone: string | null;
+  technician_rating: number;
+  status: string;
+  scheduled_date: string;
+  time_slot: string;
+  service_address: string;
+  total_amount: number;
+  technician_cut: number;
+  payment_status: string;
+  otp: string;
+  instructions: string;
+  work_performed?: string;
+  parts_used?: string;
+  technician_notes?: string;
+  customer_remarks?: string;
+  required_parts?: string[];
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  technician_id: string;
+  date: string;
+  day: string;
+  punch_in: string;
+  punch_out: string | null;
+  duration_hours: number;
+  status: 'PRESENT' | 'HALF_DAY' | 'OFF' | 'LEAVE';
+  hub: string;
+}
+
+export interface EarningsRecord {
+  id: string;
+  technician_id: string;
+  job_id: string;
+  service: string;
+  customer: string;
+  date: string;
+  amount: number;
+  status: 'Settled' | 'Processing';
+}
+
+export interface NotificationRecord {
+  id: string;
+  technician_id: string;
+  title: string;
+  desc: string;
+  time: string;
+  type: 'job' | 'rating' | 'payout' | 'system';
+  is_read: boolean;
+}
+
 class MemoryStore {
   public states: StateRecord[] = [
     { id: 1, name: 'Delhi', code: 'DL', created_at: new Date().toISOString() },
@@ -146,7 +209,54 @@ class MemoryStore {
     { code: 'AUDIT_VIEW', name: 'View Audit Logs', category: 'Security & Audit', description: 'Access compliance security trail and user action history', created_at: new Date().toISOString() },
   ];
 
-  public rolePermissions: { role_code: string; permission_code: string }[] = [];
+  public rolePermissions: { role_code: string; permission_code: string }[] = [
+    // SUPER_ADMIN has all permissions
+    ...[
+      'USER_VIEW', 'USER_CREATE', 'USER_UPDATE', 'USER_DEACTIVATE', 'USER_DELETE',
+      'ROLE_VIEW', 'ROLE_MANAGE',
+      'BOOKING_VIEW', 'BOOKING_CREATE', 'BOOKING_UPDATE', 'BOOKING_ASSIGN', 'BOOKING_CANCEL',
+      'CUSTOMER_VIEW', 'CUSTOMER_CREATE', 'CUSTOMER_UPDATE',
+      'TECHNICIAN_VIEW', 'TECHNICIAN_CREATE', 'TECHNICIAN_UPDATE', 'TECHNICIAN_ASSIGN',
+      'SALES_VIEW', 'SALES_CREATE', 'SALES_UPDATE',
+      'MANAGER_VIEW', 'FINANCE_VIEW',
+      'PAYMENT_VIEW', 'PAYMENT_MANAGE', 'INVOICE_VIEW', 'INVOICE_MANAGE', 'COMMISSION_VIEW', 'COMMISSION_MANAGE',
+      'SERVICE_VIEW', 'SERVICE_CREATE', 'SERVICE_UPDATE', 'SERVICE_DELETE',
+      'LOCATION_VIEW', 'LOCATION_MANAGE',
+      'AMC_VIEW', 'AMC_MANAGE',
+      'REPORT_VIEW', 'SUPPORT_VIEW', 'SUPPORT_MANAGE', 'REVIEW_VIEW',
+      'NOTIFICATION_VIEW', 'NOTIFICATION_MANAGE',
+      'SETTINGS_VIEW', 'SETTINGS_MANAGE',
+      'AUDIT_VIEW', 'INTEGRATION_VIEW', 'INTEGRATION_MANAGE',
+    ].map((p) => ({ role_code: 'SUPER_ADMIN', permission_code: p })),
+    // MANAGER
+    ...[
+      'USER_VIEW', 'USER_CREATE', 'USER_UPDATE', 'USER_DEACTIVATE',
+      'BOOKING_VIEW', 'BOOKING_UPDATE', 'BOOKING_ASSIGN',
+      'CUSTOMER_VIEW', 'TECHNICIAN_VIEW', 'TECHNICIAN_ASSIGN',
+      'SALES_VIEW', 'SERVICE_VIEW', 'LOCATION_VIEW', 'AMC_VIEW',
+      'SUPPORT_VIEW', 'REVIEW_VIEW', 'REPORT_VIEW', 'NOTIFICATION_VIEW',
+    ].map((p) => ({ role_code: 'MANAGER', permission_code: p })),
+    // SALES
+    ...[
+      'BOOKING_VIEW', 'BOOKING_CREATE', 'BOOKING_UPDATE',
+      'CUSTOMER_VIEW', 'CUSTOMER_CREATE', 'CUSTOMER_UPDATE',
+      'SERVICE_VIEW', 'SUPPORT_VIEW', 'REVIEW_VIEW', 'AMC_VIEW', 'REPORT_VIEW',
+    ].map((p) => ({ role_code: 'SALES', permission_code: p })),
+    // FINANCE (No BOOKING_ASSIGN)
+    ...[
+      'PAYMENT_VIEW', 'PAYMENT_MANAGE', 'INVOICE_VIEW', 'INVOICE_MANAGE',
+      'COMMISSION_VIEW', 'COMMISSION_MANAGE', 'REPORT_VIEW',
+      'CUSTOMER_VIEW', 'BOOKING_VIEW', 'AUDIT_VIEW',
+    ].map((p) => ({ role_code: 'FINANCE', permission_code: p })),
+    // TECHNICIAN
+    ...[
+      'BOOKING_VIEW', 'TECHNICIAN_UPDATE', 'SUPPORT_VIEW',
+    ].map((p) => ({ role_code: 'TECHNICIAN', permission_code: p })),
+    // CUSTOMER
+    ...[
+      'CUSTOMER_UPDATE', 'BOOKING_VIEW', 'BOOKING_CREATE', 'AMC_VIEW', 'SUPPORT_VIEW',
+    ].map((p) => ({ role_code: 'CUSTOMER', permission_code: p })),
+  ];
 
   public users: UserRecord[] = [
     {
@@ -230,10 +340,42 @@ class MemoryStore {
       deleted_at: null,
     },
     {
+      id: 'tech-2',
+      public_id: 'VXUSR-000009',
+      name: 'Amit Technician',
+      email: 'amit.tech@vertexservices.in',
+      phone: '9999990011',
+      password_hash: '$2a$10$eE0mQeE0mQeE0mQeE0mQe.4wFkQeE0mQeE0mQeE0mQeE0mQeE0mQe',
+      role: 'TECHNICIAN',
+      status: 'ACTIVE',
+      profile_image: 'AT',
+      city_id: 1,
+      created_at: new Date(Date.now() - 11 * 86400000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_login_at: new Date().toISOString(),
+      deleted_at: null,
+    },
+    {
+      id: 'tech-3',
+      public_id: 'VXUSR-000010',
+      name: 'Vikas Technician',
+      email: 'vikas.tech@vertexservices.in',
+      phone: '9999990012',
+      password_hash: '$2a$10$eE0mQeE0mQeE0mQeE0mQe.4wFkQeE0mQeE0mQeE0mQeE0mQeE0mQe',
+      role: 'TECHNICIAN',
+      status: 'ACTIVE',
+      profile_image: 'VT',
+      city_id: 3,
+      created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_login_at: new Date().toISOString(),
+      deleted_at: null,
+    },
+    {
       id: 'cust-1',
       public_id: 'VXUSR-000013',
       name: 'Rahul Sharma',
-      email: 'rahul.sharma@example.com',
+      email: 'customer@vertex.demo',
       phone: '9999990002',
       password_hash: '$2a$10$eE0mQeE0mQeE0mQeE0mQe.4wFkQeE0mQeE0mQeE0mQeE0mQeE0mQe',
       role: 'CUSTOMER',
@@ -241,6 +383,22 @@ class MemoryStore {
       profile_image: 'RS',
       city_id: 2,
       created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+      updated_at: new Date().toISOString(),
+      last_login_at: new Date().toISOString(),
+      deleted_at: null,
+    },
+    {
+      id: 'cust-2',
+      public_id: 'VXUSR-000014',
+      name: 'Priya Sharma',
+      email: 'priya.sharma@example.com',
+      phone: '9999990005',
+      password_hash: '$2a$10$eE0mQeE0mQeE0mQeE0mQe.4wFkQeE0mQeE0mQeE0mQeE0mQeE0mQe',
+      role: 'CUSTOMER',
+      status: 'ACTIVE',
+      profile_image: 'PS',
+      city_id: 2,
+      created_at: new Date(Date.now() - 5 * 86400000).toISOString(),
       updated_at: new Date().toISOString(),
       last_login_at: new Date().toISOString(),
       deleted_at: null,
@@ -302,10 +460,298 @@ class MemoryStore {
       id: 'tech-prof-1',
       user_id: 'tech-1',
       primary_skills: ['AC Repair', 'HVAC Maintenance'],
+      skills: JSON.stringify(['AC Repair', 'HVAC Maintenance']),
       service_tier: 'SENIOR',
       rating: 4.9,
       total_jobs_assigned: 84,
       total_jobs_completed: 81,
+      completed_jobs_count: 81,
+      is_on_duty: true,
+      kyc_status: 'VERIFIED',
+    },
+    {
+      id: 'tech-prof-2',
+      user_id: 'tech-2',
+      primary_skills: ['Electrical Engineering', 'Smart Home Panels'],
+      skills: JSON.stringify(['Electrical Engineering', 'Smart Home Panels']),
+      service_tier: 'SPECIALIST',
+      rating: 4.8,
+      total_jobs_assigned: 65,
+      total_jobs_completed: 62,
+      completed_jobs_count: 62,
+      is_on_duty: false,
+      kyc_status: 'VERIFIED',
+    },
+    {
+      id: 'tech-prof-3',
+      user_id: 'tech-3',
+      primary_skills: ['Plumbing', 'Water Heaters'],
+      skills: JSON.stringify(['Plumbing', 'Water Heaters']),
+      service_tier: 'SENIOR',
+      rating: 4.82,
+      total_jobs_assigned: 58,
+      total_jobs_completed: 55,
+      completed_jobs_count: 55,
+      is_on_duty: true,
+      kyc_status: 'VERIFIED',
+    },
+  ];
+
+  public bookings: BookingRecord[] = [
+    {
+      id: 'VTX-84920',
+      public_id: 'VTX-84920',
+      service_id: 'srv-ac-repair',
+      service_name: 'AC Repair & Deep Clean',
+      customer_id: 'cust-1',
+      customer_name: 'Rahul Sharma',
+      customer_phone: '+91 98101 23456',
+      technician_id: 'tech-1',
+      technician_name: 'Raj Kumar',
+      technician_phone: '+91 99999 90001',
+      technician_rating: 4.9,
+      status: 'In Progress',
+      scheduled_date: 'Today, 7 Sep 2026',
+      time_slot: '10:00 AM - 12:00 PM',
+      service_address: 'Villa 14B, Hamilton Court, DLF Phase 4, Sector 28, Gurgaon',
+      total_amount: 499,
+      technician_cut: 380,
+      payment_status: 'Paid Online',
+      otp: '4821',
+      instructions: 'Master bedroom split AC is dripping water inside onto the wooden floor.',
+      required_parts: ['Water Tray Seal', 'Drain Pipe 1.5m', 'Anti-fungal Coil Cleaner'],
+      created_at: new Date(Date.now() - 3600000).toISOString(),
+      deleted_at: null,
+    },
+    {
+      id: 'VTX-84921',
+      public_id: 'VTX-84921',
+      service_id: 'srv-ac-service',
+      service_name: 'Dual Split AC Jet Foam Service',
+      customer_id: 'cust-1',
+      customer_name: 'Rahul Sharma',
+      customer_phone: '+91 98101 23456',
+      technician_id: 'tech-1',
+      technician_name: 'Raj Kumar',
+      technician_phone: '+91 99999 90001',
+      technician_rating: 4.9,
+      status: 'Assigned',
+      scheduled_date: 'Today, 7 Sep 2026',
+      time_slot: '02:00 PM - 03:30 PM',
+      service_address: 'Flat 402, Tower B, Palm Grove Heights, Golf Course Road, Sector 54, Gurgaon',
+      total_amount: 599,
+      technician_cut: 450,
+      payment_status: 'Paid Online',
+      otp: '6743',
+      instructions: 'Pre-summer dual split AC foam jet service requested. Customer has ladder available.',
+      required_parts: ['Foam Jet Chemical Concentrate', 'High Pressure Nozzle'],
+      created_at: new Date(Date.now() - 7200000).toISOString(),
+      deleted_at: null,
+    },
+    {
+      id: 'VTX-84924',
+      public_id: 'VTX-84924',
+      service_id: 'srv-plumbing',
+      service_name: 'Bathroom Tap & Mixer Repair',
+      customer_id: 'cust-1',
+      customer_name: 'Rahul Sharma',
+      customer_phone: '+91 98101 23456',
+      technician_id: 'tech-3',
+      technician_name: 'Vikas Technician',
+      technician_phone: '+91 99999 90012',
+      technician_rating: 4.82,
+      status: 'Assigned',
+      scheduled_date: 'Tomorrow, 8 Sep 2026',
+      time_slot: '11:00 AM - 01:00 PM',
+      service_address: 'Flat 804, Pinnacle Tower, Golf Course Road, Sector 43, Gurgaon',
+      total_amount: 299,
+      technician_cut: 230,
+      payment_status: 'Paid Online',
+      otp: '7392',
+      instructions: 'Wall mixer tap is dripping continuously.',
+      required_parts: ['Ceramic Cartridge 35mm', 'Teflon Tape'],
+      created_at: new Date(Date.now() - 14400000).toISOString(),
+      deleted_at: null,
+    },
+    {
+      id: 'VTX-84925',
+      public_id: 'VTX-84925',
+      service_id: 'srv-electrical',
+      service_name: 'Living Room Chandelier & MCB Trip Solved',
+      customer_id: 'cust-1',
+      customer_name: 'Rahul Sharma',
+      customer_phone: '+91 98101 23456',
+      technician_id: 'tech-2',
+      technician_name: 'Amit Technician',
+      technician_phone: '+91 99999 90011',
+      technician_rating: 4.8,
+      status: 'Completed',
+      scheduled_date: '2026-09-02',
+      time_slot: '02:00 PM - 04:00 PM',
+      service_address: 'B-12 South Extension Part 2, New Delhi',
+      total_amount: 299,
+      technician_cut: 220,
+      payment_status: 'Paid Online',
+      otp: '9103',
+      instructions: 'Tripping issue on lighting circuit.',
+      work_performed: 'Identified loose neutral link on MCB distribution board, re-crimped and secured.',
+      parts_used: 'Single Pole 16A C-Curve MCB',
+      technician_notes: 'All load tests normal. Chandelier dimmer works smoothly.',
+      customer_remarks: 'Prompt service and neat cleanup.',
+      created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+      deleted_at: null,
+    },
+    {
+      id: 'VTX-84926',
+      public_id: 'VTX-84926',
+      service_id: 'srv-refrigerator',
+      service_name: 'Refrigerator Cooling Issue',
+      customer_id: 'cust-1',
+      customer_name: 'Rahul Sharma',
+      customer_phone: '+91 98101 23456',
+      technician_id: 'tech-1',
+      technician_name: 'Raj Kumar',
+      technician_phone: '+91 99999 90001',
+      technician_rating: 4.9,
+      status: 'Completed',
+      scheduled_date: '2026-09-05',
+      time_slot: '04:00 PM - 05:30 PM',
+      service_address: 'Villa 14B, Hamilton Court, DLF Phase 4, Gurgaon',
+      total_amount: 399,
+      technician_cut: 300,
+      payment_status: 'Paid Online',
+      otp: '1290',
+      instructions: 'Frost-free double door fridge not cooling in lower cabinet.',
+      work_performed: 'Replaced defective defrost thermostat sensor and cleaned condenser fan.',
+      parts_used: 'Bimetal Defrost Thermostat',
+      technician_notes: 'Evaporator frost cleared and temperature cycle confirmed down to 4°C.',
+      customer_remarks: 'Excellent work as always.',
+      created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+      deleted_at: null,
+    },
+    {
+      id: 'VTX-84930',
+      public_id: 'VTX-84930',
+      service_id: 'srv-electrical',
+      service_name: 'Electrical Short Circuit Check',
+      customer_id: 'cust-2',
+      customer_name: 'Priya Sharma',
+      customer_phone: '+91 99999 90005',
+      technician_id: 'tech-2',
+      technician_name: 'Amit Technician',
+      technician_phone: '+91 99999 90011',
+      technician_rating: 4.8,
+      status: 'Assigned',
+      scheduled_date: 'Today, 7 Sep 2026',
+      time_slot: '03:00 PM - 05:00 PM',
+      service_address: 'Flat 302, Green Glen Layout, Bellandur, Bangalore',
+      total_amount: 499,
+      technician_cut: 380,
+      payment_status: 'Paid Online',
+      otp: '5812',
+      instructions: 'Circuit breaker trips when microwave turns on.',
+      required_parts: ['32A Circuit Breaker', 'Multi-meter probe'],
+      created_at: new Date(Date.now() - 3600000).toISOString(),
+      deleted_at: null,
+    },
+  ];
+
+  public attendanceRecords: AttendanceRecord[] = [
+    {
+      id: 'att-1',
+      technician_id: 'tech-1',
+      date: 'Today, 7 Sep 2026',
+      day: 'Mon',
+      punch_in: '08:45 AM',
+      punch_out: null,
+      duration_hours: 6.5,
+      status: 'PRESENT',
+      hub: 'Gurgaon Central Hub (Sector 29)',
+    },
+    {
+      id: 'att-2',
+      technician_id: 'tech-1',
+      date: '6 Sep 2026',
+      day: 'Sun',
+      punch_in: '09:02 AM',
+      punch_out: '06:15 PM',
+      duration_hours: 9.2,
+      status: 'PRESENT',
+      hub: 'Gurgaon Central Hub (Sector 29)',
+    },
+    {
+      id: 'att-3',
+      technician_id: 'tech-1',
+      date: '5 Sep 2026',
+      day: 'Sat',
+      punch_in: '08:50 AM',
+      punch_out: '06:30 PM',
+      duration_hours: 9.6,
+      status: 'PRESENT',
+      hub: 'Gurgaon Central Hub (Sector 29)',
+    },
+  ];
+
+  public technicianEarnings: EarningsRecord[] = [
+    {
+      id: 'earn-1',
+      technician_id: 'tech-1',
+      job_id: 'JOB-901',
+      service: 'AC Repair & Deep Clean',
+      customer: 'Rahul Sharma',
+      date: 'Today, 7 Sep 2026',
+      amount: 380,
+      status: 'Processing',
+    },
+    {
+      id: 'earn-2',
+      technician_id: 'tech-1',
+      job_id: 'JOB-842',
+      service: 'Refrigerator Defrost Repair',
+      customer: 'Anita Desai',
+      date: '5 Sep 2026',
+      amount: 300,
+      status: 'Settled',
+    },
+    {
+      id: 'earn-3',
+      technician_id: 'tech-1',
+      job_id: 'JOB-839',
+      service: 'Inverter Board Capacitor Service',
+      customer: 'Vikram Mehta',
+      date: '4 Sep 2026',
+      amount: 450,
+      status: 'Settled',
+    },
+  ];
+
+  public technicianNotifications: NotificationRecord[] = [
+    {
+      id: 'notif-1',
+      technician_id: 'tech-1',
+      title: 'New Service Job Assigned',
+      desc: 'Dual Split AC Jet Foam Service assigned for 02:00 PM today.',
+      time: '1 hour ago',
+      type: 'job',
+      is_read: false,
+    },
+    {
+      id: 'notif-2',
+      technician_id: 'tech-1',
+      title: '5-Star Rating Received!',
+      desc: 'Rahul Sharma rated you 5 stars for refrigerator cooling repair.',
+      time: 'Yesterday',
+      type: 'rating',
+      is_read: true,
+    },
+    {
+      id: 'notif-3',
+      technician_id: 'tech-1',
+      title: 'Weekly Payout Processed',
+      desc: '₹6,450 credited to your registered HDFC bank account.',
+      time: '3 days ago',
+      type: 'payout',
+      is_read: true,
     },
   ];
 
@@ -360,6 +806,27 @@ class MemoryStore {
 
   public async executeQuery<T = any>(sql: string, params: any[] = []): Promise<{ rows: T[]; rowCount: number }> {
     const cleanSql = sql.replace(/\s+/g, ' ').trim();
+
+    // 0. information_schema.tables
+    if (/information_schema\.tables/i.test(cleanSql)) {
+      const tables = [
+        { table_name: 'users' },
+        { table_name: 'roles' },
+        { table_name: 'permissions' },
+        { table_name: 'role_permissions' },
+        { table_name: 'user_location_scopes' },
+        { table_name: 'states' },
+        { table_name: 'cities' },
+        { table_name: 'services' },
+        { table_name: 'bookings' },
+        { table_name: 'technician_profiles' },
+        { table_name: 'manager_profiles' },
+        { table_name: 'sales_profiles' },
+        { table_name: 'finance_profiles' },
+        { table_name: 'audit_logs' },
+      ];
+      return { rows: tables as any, rowCount: tables.length };
+    }
 
     // 1. SELECT roles
     if (/SELECT \* FROM roles/i.test(cleanSql)) {
@@ -445,13 +912,116 @@ class MemoryStore {
 
       const city = this.cities.find((c) => c.id === user.city_id);
       const role = this.roles.find((r) => r.code === user.role);
+      const techProfile = this.technicianProfiles.find((t) => t.user_id === id);
 
       const enriched = {
         ...user,
         city_name: city?.name || 'Gurgaon',
         role_name: role?.name || user.role,
+        rating: techProfile?.rating ?? 4.9,
+        completed_jobs_count: techProfile?.completed_jobs_count ?? techProfile?.total_jobs_completed ?? 0,
+        is_on_duty: techProfile?.is_on_duty ?? true,
+        kyc_status: techProfile?.kyc_status ?? 'VERIFIED',
+        skills: techProfile?.skills || JSON.stringify(['AC Repair', 'HVAC Maintenance']),
       };
       return { rows: [enriched] as any, rowCount: 1 };
+    }
+
+    // 10b. Update technician duty status
+    if (/UPDATE technician_profiles SET is_on_duty = \$1 WHERE user_id = \$2/i.test(cleanSql)) {
+      const isOnDuty = Boolean(params[0]);
+      const userId = String(params[1]);
+      const profile = this.technicianProfiles.find((t) => t.user_id === userId);
+      if (profile) {
+        profile.is_on_duty = isOnDuty;
+      } else {
+        this.technicianProfiles.push({
+          id: `tech-prof-${Date.now()}`,
+          user_id: userId,
+          primary_skills: ['General Repair'],
+          skills: JSON.stringify(['General Repair']),
+          service_tier: 'STANDARD',
+          rating: 4.8,
+          total_jobs_assigned: 0,
+          total_jobs_completed: 0,
+          completed_jobs_count: 0,
+          is_on_duty: isOnDuty,
+          kyc_status: 'VERIFIED',
+        });
+      }
+      return { rows: [], rowCount: 1 };
+    }
+
+    // 10c. Bookings queries
+    if (/FROM bookings.*WHERE.*technician_id = \$1/i.test(cleanSql)) {
+      const techId = String(params[0]);
+      const jobs = this.bookings.filter((b) => b.technician_id === techId && !b.deleted_at);
+      return { rows: jobs as any, rowCount: jobs.length };
+    }
+
+    if (/FROM bookings.*WHERE \(b\.id = \$1 OR b\.public_id = \$1\)/i.test(cleanSql) ||
+        /FROM bookings.*WHERE \(id = \$1 OR public_id = \$1\)/i.test(cleanSql)) {
+      const id = String(params[0]);
+      const booking = this.bookings.find((b) => (b.id === id || b.public_id === id) && !b.deleted_at);
+      return { rows: booking ? ([booking] as any) : [], rowCount: booking ? 1 : 0 };
+    }
+
+    if (/FROM bookings.*WHERE.*customer_id = \$1/i.test(cleanSql)) {
+      const custId = String(params[0]);
+      const customerBookings = this.bookings.filter((b) => b.customer_id === custId && !b.deleted_at);
+      return { rows: customerBookings as any, rowCount: customerBookings.length };
+    }
+
+    if (/SELECT COUNT\(\*\).*FROM bookings/i.test(cleanSql)) {
+      const count = this.bookings.filter((b) => !b.deleted_at).length;
+      return { rows: [{ count, total: count }] as any, rowCount: 1 };
+    }
+
+    if (/SELECT SUM\(total_amount\).*FROM bookings/i.test(cleanSql)) {
+      const sum = this.bookings.reduce((acc, b) => acc + (b.total_amount || 0), 0);
+      return { rows: [{ total: sum, sum }] as any, rowCount: 1 };
+    }
+
+    if (/UPDATE bookings SET technician_id = \$1/i.test(cleanSql)) {
+      const techId = String(params[0]);
+      const bookingId = String(params[1]);
+      const b = this.bookings.find((x) => x.id === bookingId || x.public_id === bookingId);
+      const tech = this.users.find((u) => u.id === techId);
+      if (b) {
+        b.technician_id = techId;
+        b.technician_name = tech?.name || 'Assigned Technician';
+        b.technician_phone = tech?.phone || '+91 99999 90001';
+        b.status = 'Assigned';
+      }
+      return { rows: b ? [b] as any : [], rowCount: b ? 1 : 0 };
+    }
+
+    if (/UPDATE bookings SET status = \$1/i.test(cleanSql)) {
+      const status = String(params[0]);
+      const bookingId = String(params[1]);
+      const b = this.bookings.find((x) => x.id === bookingId || x.public_id === bookingId);
+      if (b) {
+        b.status = status;
+      }
+      return { rows: b ? [b] as any : [], rowCount: b ? 1 : 0 };
+    }
+
+    if (/FROM technician_attendance WHERE technician_id = \$1/i.test(cleanSql)) {
+      const techId = String(params[0]);
+      const att = this.attendanceRecords.filter((a) => a.technician_id === techId);
+      return { rows: att as any, rowCount: att.length };
+    }
+
+    if (/FROM technician_earnings WHERE technician_id = \$1/i.test(cleanSql)) {
+      const techId = String(params[0]);
+      const earn = this.technicianEarnings.filter((e) => e.technician_id === techId);
+      return { rows: earn as any, rowCount: earn.length };
+    }
+
+    if (/FROM technician_notifications WHERE technician_id = \$1/i.test(cleanSql)) {
+      const techId = String(params[0]);
+      const notifs = this.technicianNotifications.filter((n) => n.technician_id === techId);
+      return { rows: notifs as any, rowCount: notifs.length };
     }
 
     // 11. Role permissions lookup

@@ -170,6 +170,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         nextDuty ? 'You are now visible for incoming service dispatches.' : 'You will not receive new assignments today.',
         nextDuty ? 'success' : 'warning'
       );
+      // Persist to shared backend
+      const token = localStorage.getItem('vx_token');
+      fetch('/api/v1/technician/duty-toggle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ isOnDuty: nextDuty }),
+      }).catch(() => {});
       return { ...prev, isOnDuty: nextDuty };
     });
   };
@@ -251,6 +261,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
 
+    // Persist status change to backend API
+    const token = localStorage.getItem('vx_token');
+    const endpointMap: Record<string, string> = {
+      'Accepted': 'accept',
+      'En Route': 'en-route',
+      'Arrived': 'arrived',
+      'In Progress': 'start',
+      'Completed': 'complete',
+    };
+    const action = endpointMap[status];
+    if (action) {
+      fetch(`/api/v1/technician/jobs/${jobId}/${action}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ otp: '4821' }),
+      }).catch(() => {});
+    }
+
     addToast('Job Status Updated', `Job #${jobId} marked as ${status}`, 'success');
   };
 
@@ -299,6 +330,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           j.bookingId === bookingId
             ? {
                 ...j,
+                technicianId: tech.id,
                 status: 'Assigned',
               }
             : j
@@ -310,6 +342,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const newJob: TechnicianJob = {
           id: `JOB-${Math.floor(900 + Math.random() * 99)}`,
           bookingId: bookingRef.id,
+          technicianId: tech.id,
           customerName: bookingRef.customerName,
           customerPhone: bookingRef.customerPhone,
           serviceName: bookingRef.serviceName,
@@ -327,6 +360,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return prev;
     });
+
+    // Persist assignment to backend
+    const token = localStorage.getItem('vx_token');
+    fetch(`/api/v1/admin/bookings/${bookingId}/assign`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ technicianId }),
+    }).catch(() => {});
 
     // Notify customer
     setNotifications((prev) => [

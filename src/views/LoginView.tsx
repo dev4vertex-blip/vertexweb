@@ -24,28 +24,30 @@ import {
   Clock,
   Info,
 } from 'lucide-react';
+import { isDemoLoginEnabled } from '../shared/config';
 
 export const LoginView: React.FC = () => {
   const { loginWithCredentials, loginWithOtp } = useAuth();
   const { addToast, setAppRole } = useApp();
 
+  const demoEnabled = isDemoLoginEnabled();
   const [activeTab, setActiveTab] = useState<'customer' | 'technician' | 'admin'>('customer');
 
   // Customer State
-  const [customerPhone, setCustomerPhone] = useState('9999990002');
+  const [customerPhone, setCustomerPhone] = useState(demoEnabled ? '9999990002' : '');
   const [customerOtpStep, setCustomerOtpStep] = useState(false);
   const [customerOtp, setCustomerOtp] = useState('');
   const [customerLoading, setCustomerLoading] = useState(false);
 
   // Technician State
-  const [techPhone, setTechPhone] = useState('9999990001');
+  const [techPhone, setTechPhone] = useState(demoEnabled ? '9999990001' : '');
   const [techOtpStep, setTechOtpStep] = useState(false);
   const [techOtp, setTechOtp] = useState('');
   const [techLoading, setTechLoading] = useState(false);
 
   // Admin State
-  const [adminEmail, setAdminEmail] = useState('admin@vertex.demo');
-  const [adminPassword, setAdminPassword] = useState('Admin@123');
+  const [adminEmail, setAdminEmail] = useState(demoEnabled ? 'admin@vertex.demo' : '');
+  const [adminPassword, setAdminPassword] = useState(demoEnabled ? 'Admin@123' : '');
   const [adminSelectedRole, setAdminSelectedRole] = useState<UserRole>('SUPER_ADMIN');
   const [adminLoading, setAdminLoading] = useState(false);
 
@@ -290,14 +292,16 @@ export const LoginView: React.FC = () => {
               </div>
 
               {/* Development Notice */}
-              <div className="mb-5 p-3 rounded-lg bg-blue-50/60 border border-blue-100 flex items-start gap-2.5 text-xs text-blue-900">
-                <Info className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
-                <div>
-                  <span className="font-bold">Development Sandbox:</span> Real SMS gateway is
-                  disabled. Use registered test mobile <strong>9999990002</strong> and simulation
-                  OTP <strong>1234</strong>.
+              {demoEnabled && (
+                <div className="mb-5 p-3 rounded-lg bg-blue-50/60 border border-blue-100 flex items-start gap-2.5 text-xs text-blue-900">
+                  <Info className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Development Sandbox:</span> Real SMS gateway is
+                    disabled. Use registered test mobile <strong>9999990002</strong> and simulation
+                    OTP <strong>1234</strong>.
+                  </div>
                 </div>
-              </div>
+              )}
 
               {!customerOtpStep ? (
                 /* Step 1: Phone Number */
@@ -322,16 +326,18 @@ export const LoginView: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between">
-                    <span className="text-slate-500">Official Demo Account:</span>
-                    <button
-                      type="button"
-                      onClick={() => setCustomerPhone('9999990002')}
-                      className="font-bold text-blue-600 hover:underline cursor-pointer"
-                    >
-                      Use Rahul Sharma (9999990002)
-                    </button>
-                  </div>
+                  {demoEnabled && (
+                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between">
+                      <span className="text-slate-500">Official Demo Account:</span>
+                      <button
+                        type="button"
+                        onClick={() => setCustomerPhone('9999990002')}
+                        className="font-bold text-blue-600 hover:underline cursor-pointer"
+                      >
+                        Use Rahul Sharma (9999990002)
+                      </button>
+                    </div>
+                  )}
 
                   <Button
                     type="submit"
@@ -371,16 +377,18 @@ export const LoginView: React.FC = () => {
                       placeholder="1234"
                       required
                     />
-                    <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500">
-                      <span>Mock OTP: 1234</span>
-                      <button
-                        type="button"
-                        onClick={() => setCustomerOtp('1234')}
-                        className="text-blue-600 font-semibold hover:underline"
-                      >
-                        Auto-fill 1234
-                      </button>
-                    </div>
+                    {demoEnabled && (
+                      <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500">
+                        <span>Mock OTP: 1234</span>
+                        <button
+                          type="button"
+                          onClick={() => setCustomerOtp('1234')}
+                          className="text-blue-600 font-semibold hover:underline"
+                        >
+                          Auto-fill 1234
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <Button
@@ -412,13 +420,15 @@ export const LoginView: React.FC = () => {
               </div>
 
               {/* Development Notice */}
-              <div className="mb-5 p-3 rounded-lg bg-amber-50/70 border border-amber-100 flex items-start gap-2.5 text-xs text-amber-900">
-                <Info className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                <div>
-                  <span className="font-bold">Partner Sandbox:</span> Use registered technician
-                  mobile <strong>9999990001</strong> and development OTP <strong>1234</strong>.
+              {demoEnabled && (
+                <div className="mb-5 p-3 rounded-lg bg-amber-50/70 border border-amber-100 flex items-start gap-2.5 text-xs text-amber-900">
+                  <Info className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Partner Sandbox:</span> Use registered technician
+                    mobile <strong>9999990001</strong> and development OTP <strong>1234</strong>.
+                  </div>
                 </div>
-              </div>
+              )}
 
               {!techOtpStep ? (
                 /* Step 1: Tech Phone Number */
@@ -492,16 +502,18 @@ export const LoginView: React.FC = () => {
                       placeholder="1234"
                       required
                     />
-                    <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500">
-                      <span>Mock OTP: 1234</span>
-                      <button
-                        type="button"
-                        onClick={() => setTechOtp('1234')}
-                        className="text-amber-700 font-semibold hover:underline"
-                      >
-                        Auto-fill 1234
-                      </button>
-                    </div>
+                    {demoEnabled && (
+                      <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500">
+                        <span>Mock OTP: 1234</span>
+                        <button
+                          type="button"
+                          onClick={() => setTechOtp('1234')}
+                          className="text-amber-700 font-semibold hover:underline"
+                        >
+                          Auto-fill 1234
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <Button
@@ -533,43 +545,45 @@ export const LoginView: React.FC = () => {
               </div>
 
               {/* 4 Demo Admin Accounts Picker */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                    Select Demo Administrative Profile
-                  </label>
-                  <span className="text-[11px] text-blue-600 font-medium">1-Click Fast Fill</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {adminDemoUsers.map((item) => {
-                    const isSelected = adminSelectedRole === item.role;
-                    return (
-                      <button
-                        key={item.role}
-                        type="button"
-                        onClick={() => selectAdminDemoUser(item)}
-                        className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
-                            : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
-                        }`}
-                      >
-                        <div className="text-xs font-bold leading-tight flex items-center justify-between">
-                          <span>{item.label}</span>
-                          {isSelected && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                        </div>
-                        <div
-                          className={`text-[10px] mt-0.5 font-mono ${
-                            isSelected ? 'text-slate-300' : 'text-slate-400'
+              {demoEnabled && (
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                      Select Demo Administrative Profile
+                    </label>
+                    <span className="text-[11px] text-blue-600 font-medium">1-Click Fast Fill</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {adminDemoUsers.map((item) => {
+                      const isSelected = adminSelectedRole === item.role;
+                      return (
+                        <button
+                          key={item.role}
+                          type="button"
+                          onClick={() => selectAdminDemoUser(item)}
+                          className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
+                              : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
                           }`}
                         >
-                          {item.desc}
-                        </div>
-                      </button>
-                    );
-                  })}
+                          <div className="text-xs font-bold leading-tight flex items-center justify-between">
+                            <span>{item.label}</span>
+                            {isSelected && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                          </div>
+                          <div
+                            className={`text-[10px] mt-0.5 font-mono ${
+                              isSelected ? 'text-slate-300' : 'text-slate-400'
+                            }`}
+                          >
+                            {item.desc}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Form with Email & Password */}
               <form onSubmit={handleAdminSubmit} className="space-y-4">

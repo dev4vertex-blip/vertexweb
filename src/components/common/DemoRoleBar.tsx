@@ -2,9 +2,14 @@ import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { UserRole } from '../../types/auth';
+import { isDemoLoginEnabled } from '../../shared/config';
 import { Shield, User, Wrench, LogOut, Layers, Sparkles } from 'lucide-react';
 
 export const DemoRoleBar: React.FC = () => {
+  if (!isDemoLoginEnabled()) {
+    return null;
+  }
+
   const { user, isAuthenticated, loginWithCredentials, loginWithOtp, logout } = useAuth();
   const { addToast, setAppRole } = useApp();
 

@@ -5,10 +5,54 @@ import { seedDatabase } from './src/db/seed.js';
 import authRouter from './src/server/routes/auth.js';
 import usersRouter from './src/server/routes/users.js';
 import metadataRouter from './src/server/routes/metadata.js';
+import customerRouter from './src/server/routes/customer.js';
+import technicianRouter from './src/server/routes/technician.js';
+import adminRouter from './src/server/routes/admin.js';
+import webhooksRouter from './src/server/routes/webhooks.js';
+import uploadsRouter from './src/server/routes/uploads.js';
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // CORS Configuration: Supports Web, Mobile (Capacitor/Cordova), and Dev environments
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const isProd = process.env.NODE_ENV === 'production';
+
+    const allowedMobileSchemes = ['capacitor://', 'ionic://', 'http://localhost', 'https://localhost'];
+    const isMobileOrigin = origin && allowedMobileSchemes.some((scheme) => origin.startsWith(scheme));
+
+    if (!origin) {
+      // Non-browser request (e.g., native mobile HTTP plugins, background jobs)
+      // No Origin header is sent; browser CORS restrictions do not apply
+    } else if (isMobileOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else if (!isProd) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else {
+      // In production, only strictly verified web origins are permitted
+      const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (configuredOrigins.length > 0 && configuredOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+      // If configuredOrigins is empty or origin is not authorized, CORS header is omitted
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Webhook-Signature, X-Webhook-Timestamp, X-Skip-Rate-Limit');
+
+    if (req.method === 'OPTIONS') {
+      return res.status(204).end();
+    }
+    next();
+  });
 
   app.use(express.json());
 
@@ -47,17 +91,22 @@ async function startServer() {
     const dbTest = await testDatabaseConnection();
     if (dbTest.connected) {
       await seedDatabase();
-      console.log('[Supabase PostgreSQL] Database successfully initialized.');
+      console.log('[Supabase PostgreSQL] Database connected and initialized.');
     } else {
-      console.log(`[Supabase PostgreSQL] Status: ${dbTest.message}`);
+      console.log('[VERTEX Core] Database notice: Resilient in-memory mode active.');
     }
   } catch (dbErr: any) {
-    console.log('[Supabase PostgreSQL] Database bootstrap notice:', dbErr?.message || 'Ready in resilient mode.');
+    console.log('[VERTEX Core] Database notice: Resilient in-memory mode active.');
   }
 
   // Mount API endpoints FIRST
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/users', usersRouter);
+  app.use('/api/v1/customer', customerRouter);
+  app.use('/api/v1/technician', technicianRouter);
+  app.use('/api/v1/admin', adminRouter);
+  app.use('/api/v1/webhooks', webhooksRouter);
+  app.use('/api/v1/uploads', uploadsRouter);
   app.use('/api/v1', metadataRouter);
 
   // Vite middleware for development

@@ -210,14 +210,31 @@ export async function logAuditEvent(params: {
   try {
     const { pglite } = await getDb();
 
-    // Sanitize objects to ensure no sensitive fields are stored
+    // Sanitize objects to ensure no sensitive fields (passwords, OTPs, tokens, keys) are stored
     const sanitize = (val: any) => {
       if (!val) return null;
+      if (typeof val !== 'object') return typeof val === 'string' ? val : JSON.stringify(val);
       const copy = { ...val };
-      delete copy.password;
-      delete copy.password_hash;
-      delete copy.passwordHash;
-      delete copy.token;
+      const sensitiveKeys = [
+        'password',
+        'password_hash',
+        'passwordHash',
+        'token',
+        'jwt',
+        'accessToken',
+        'refreshToken',
+        'otp',
+        'code',
+        'secret',
+        'apiKey',
+        'key',
+        'webhook_secret',
+        'privateKey',
+        'private_key',
+      ];
+      for (const k of sensitiveKeys) {
+        delete copy[k];
+      }
       return JSON.stringify(copy);
     };
 

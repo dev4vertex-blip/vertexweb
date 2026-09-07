@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../../db/client.js';
-import { authenticateUser, requirePermission, AuthenticatedRequest } from '../middleware.js';
+import { authenticateUser, requirePermission, requireRole, AuthenticatedRequest } from '../middleware.js';
 
 const router = Router();
 
@@ -9,8 +9,9 @@ router.use(authenticateUser);
 
 /**
  * GET /api/v1/roles
+ * Internal staff only
  */
-router.get('/roles', async (req: AuthenticatedRequest, res) => {
+router.get('/roles', requireRole(['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE']), async (req: AuthenticatedRequest, res) => {
   try {
     const { pglite } = await getDb();
     const result = await pglite.query(`SELECT * FROM roles ORDER BY code ASC`);
@@ -22,8 +23,9 @@ router.get('/roles', async (req: AuthenticatedRequest, res) => {
 
 /**
  * GET /api/v1/permissions
+ * Internal staff only
  */
-router.get('/permissions', async (req: AuthenticatedRequest, res) => {
+router.get('/permissions', requireRole(['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE']), async (req: AuthenticatedRequest, res) => {
   try {
     const { pglite } = await getDb();
     const result = await pglite.query(`SELECT * FROM permissions ORDER BY category ASC, code ASC`);
