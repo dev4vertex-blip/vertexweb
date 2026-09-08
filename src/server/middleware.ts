@@ -123,6 +123,47 @@ export function requireRole(allowedRoles: string | string[]) {
   };
 }
 
+const PERMISSION_ALIASES: Record<string, string[]> = {
+  USER_UPDATE: ['USER_EDIT'],
+  USER_EDIT: ['USER_UPDATE'],
+  CUSTOMER_UPDATE: ['CUSTOMER_EDIT', 'CUSTOMER_MANAGE'],
+  CUSTOMER_EDIT: ['CUSTOMER_UPDATE', 'CUSTOMER_MANAGE'],
+  CUSTOMER_MANAGE: ['CUSTOMER_UPDATE', 'CUSTOMER_EDIT'],
+  LEAD_ASSIGN: ['LEAD_REASSIGN'],
+  LEAD_REASSIGN: ['LEAD_ASSIGN'],
+  LEAD_EDIT: ['LEAD_UPDATE'],
+  LEAD_UPDATE: ['LEAD_EDIT'],
+  PAYMENT_COLLECT: ['PAYMENT_CREATE', 'PAYMENT_MANAGE'],
+  PAYMENT_CREATE: ['PAYMENT_COLLECT', 'PAYMENT_MANAGE'],
+  PAYMENT_REFUND: ['PAYMENT_REFUND_APPROVE', 'PAYMENT_MANAGE'],
+  PAYMENT_REFUND_APPROVE: ['PAYMENT_REFUND', 'PAYMENT_MANAGE'],
+  AUDIT_LOG_VIEW: ['AUDIT_VIEW'],
+  AUDIT_VIEW: ['AUDIT_LOG_VIEW'],
+  SETTINGS_UPDATE: ['SETTINGS_EDIT', 'SETTINGS_MANAGE'],
+  SETTINGS_EDIT: ['SETTINGS_UPDATE', 'SETTINGS_MANAGE'],
+  BOOKING_UPDATE: ['BOOKING_EDIT'],
+  BOOKING_EDIT: ['BOOKING_UPDATE'],
+  SERVICE_UPDATE: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  SERVICE_EDIT: ['SERVICE_UPDATE', 'SERVICE_MANAGE'],
+  SERVICE_ACTIVATE: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  SERVICE_DEACTIVATE: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  SERVICE_PRICE_EDIT: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  AMC_PLAN_VIEW: ['AMC_VIEW', 'AMC_MANAGE'],
+  AMC_VIEW: ['AMC_PLAN_VIEW'],
+  AMC_PLAN_EDIT: ['AMC_EDIT', 'AMC_MANAGE'],
+  AMC_PLAN_PRICE_EDIT: ['AMC_PLAN_EDIT', 'AMC_MANAGE'],
+  AMC_PLAN_BENEFIT_EDIT: ['AMC_PLAN_EDIT', 'AMC_MANAGE'],
+  PARTNER_COMMISSION_VIEW: ['COMMISSION_VIEW', 'COMMISSION_MANAGE'],
+  PARTNER_COMMISSION_EDIT: ['COMMISSION_UPDATE', 'COMMISSION_MANAGE'],
+};
+
+function hasUserPermission(userPermissions: string[] | undefined, permissionCode: string): boolean {
+  if (!userPermissions || !Array.isArray(userPermissions)) return false;
+  if (userPermissions.includes(permissionCode)) return true;
+  const aliases = PERMISSION_ALIASES[permissionCode] || [];
+  return aliases.some((alias) => userPermissions.includes(alias));
+}
+
 /**
  * Require a specific permission code
  */
@@ -140,7 +181,7 @@ export function requirePermission(permissionCode: string) {
       return next();
     }
 
-    if (!req.user.permissions?.includes(permissionCode)) {
+    if (!hasUserPermission(req.user.permissions, permissionCode)) {
       logAuditEvent({
         userId: req.user.id,
         userName: req.user.name,
@@ -157,6 +198,48 @@ export function requirePermission(permissionCode: string) {
         error: {
           code: 'INSUFFICIENT_PERMISSIONS',
           message: `Forbidden: You do not possess the '${permissionCode}' capability required for this operation.`,
+        },
+      });
+    }
+
+    next();
+  };
+}
+
+/**
+ * Require at least one permission from a list of codes
+ */
+export function requireAnyPermission(permissionCodes: string[]) {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Authentication required.' },
+      });
+    }
+
+    if (req.user.role === 'SUPER_ADMIN') {
+      return next();
+    }
+
+    const hasAny = permissionCodes.some((code) => hasUserPermission(req.user.permissions, code));
+    if (!hasAny) {
+      logAuditEvent({
+        userId: req.user.id,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'UNAUTHORIZED_ACCESS_ATTEMPT',
+        entity: 'PERMISSION',
+        newValue: { missingAnyPermission: permissionCodes },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'INSUFFICIENT_PERMISSIONS',
+          message: `Forbidden: Requires at least one of the following permissions: ${permissionCodes.join(', ')}.`,
         },
       });
     }

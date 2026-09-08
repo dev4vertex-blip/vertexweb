@@ -133,6 +133,19 @@ function updateAndroidConfig(cfg: TargetConfig) {
     fs.writeFileSync(manifestPath, manifest, 'utf8');
     console.log(`[Android] Updated AndroidManifest.xml permissions for target: ${cfg.target}`);
   }
+
+  // Ensure target Java package directory and MainActivity exist
+  const javaPackageDir = path.resolve(`android/app/src/main/java/com/vertex/${cfg.target}`);
+  if (!fs.existsSync(javaPackageDir)) {
+    fs.mkdirSync(javaPackageDir, { recursive: true });
+  }
+  const mainActivityPath = path.join(javaPackageDir, 'MainActivity.java');
+  fs.writeFileSync(
+    mainActivityPath,
+    `package ${cfg.appId};\n\nimport com.getcapacitor.BridgeActivity;\n\npublic class MainActivity extends BridgeActivity {}\n`,
+    'utf8'
+  );
+  console.log(`[Android] Verified MainActivity.java at ${mainActivityPath} with package ${cfg.appId}`);
 }
 
 function updateIosConfig(cfg: TargetConfig) {

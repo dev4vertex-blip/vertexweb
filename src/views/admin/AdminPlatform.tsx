@@ -177,6 +177,27 @@ const ALL_SIDEBAR_ITEMS: SidebarItem[] = [
     icon: <Percent className="w-4 h-4" />,
     category: 'finance',
   },
+  {
+    id: 'partners',
+    route: '/admin/partners',
+    label: 'Partners & Rules',
+    icon: <Users className="w-4 h-4" />,
+    category: 'operations',
+  },
+  {
+    id: 'hr',
+    route: '/admin/hr',
+    label: 'HR & Personnel',
+    icon: <UserCheck className="w-4 h-4" />,
+    category: 'operations',
+  },
+  {
+    id: 'payroll',
+    route: '/admin/payroll',
+    label: 'Payroll & Salaries',
+    icon: <DollarSign className="w-4 h-4" />,
+    category: 'finance',
+  },
 
   // System, Insights & Support
   {
@@ -359,14 +380,35 @@ export const AdminPlatform: React.FC = () => {
                   <option value="SUPER_ADMIN" className="bg-slate-900 text-white">
                     SUPER_ADMIN (Full)
                   </option>
+                  <option value="ADMIN" className="bg-slate-900 text-white">
+                    ADMIN (Operations & Fleet)
+                  </option>
                   <option value="MANAGER" className="bg-slate-900 text-white">
                     MANAGER (Ops & Fleet)
                   </option>
                   <option value="SALES" className="bg-slate-900 text-white">
                     SALES (Catalog & AMC)
                   </option>
+                  <option value="SALES_TEAM" className="bg-slate-900 text-white">
+                    SALES_TEAM (Leads & CRM)
+                  </option>
                   <option value="FINANCE" className="bg-slate-900 text-white">
                     FINANCE (Payouts & Dues)
+                  </option>
+                  <option value="MARKETING" className="bg-slate-900 text-white">
+                    MARKETING (Campaigns & Leads)
+                  </option>
+                  <option value="OPERATIONS" className="bg-slate-900 text-white">
+                    OPERATIONS (Bookings & Technicians)
+                  </option>
+                  <option value="SUPPORT" className="bg-slate-900 text-white">
+                    SUPPORT (Customers & Tickets)
+                  </option>
+                  <option value="HR" className="bg-slate-900 text-white">
+                    HR (Personnel & Staff Leaves)
+                  </option>
+                  <option value="PAYROLL" className="bg-slate-900 text-white">
+                    PAYROLL (Salaries & Runs)
                   </option>
                 </select>
               </div>

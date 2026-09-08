@@ -14,8 +14,8 @@ export interface TokenPayload {
 /**
  * Generate authenticated bearer token for user
  */
-export function generateAuthToken(userId: string, role: string): string {
-  const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+export function generateAuthToken(userId: string, role: string, expiresInMs: number = 24 * 60 * 60 * 1000): string {
+  const expiresAt = Date.now() + expiresInMs;
   const payload: TokenPayload = { userId, role, expiresAt };
   const json = JSON.stringify(payload);
   const base64 = Buffer.from(json).toString('base64url');

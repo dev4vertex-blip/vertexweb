@@ -23,8 +23,8 @@ export const AdminApp: React.FC = () => {
     return <AdminLoginView />;
   }
 
-  // If logged in with non-staff role (e.g. Customer or Technician), block access
-  const isStaffRole = ['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE'].includes(user.role);
+  // If logged in with non-staff role (e.g. Customer, Technician, Employee self-service, Partner), block access
+  const isStaffRole = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES', 'SALES_TEAM', 'FINANCE', 'MARKETING', 'OPERATIONS', 'SUPPORT', 'HR', 'PAYROLL'].includes(user.role);
   if (!isStaffRole) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">

@@ -30,6 +30,8 @@
     "test:step14": "tsx scripts/verify_step14_production_environment.ts",
     "test:step15": "tsx scripts/verify_step15_production_release.ts",
     "test:step16": "tsx scripts/verify_step16_play_store_prep.ts",
+    "test:step17": "tsx scripts/verify_step17_customer_play_store_prep.ts",
+    "test:rbac": "tsx scripts/verify_step_rbac_enhancement.ts",
     "start": "node dist/server.cjs",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",

@@ -8,8 +8,15 @@ import metadataRouter from './src/server/routes/metadata.js';
 import customerRouter from './src/server/routes/customer.js';
 import technicianRouter from './src/server/routes/technician.js';
 import adminRouter from './src/server/routes/admin.js';
+import leadsRouter from './src/server/routes/leads.js';
+import paymentsRouter from './src/server/routes/payments.js';
 import webhooksRouter from './src/server/routes/webhooks.js';
 import uploadsRouter from './src/server/routes/uploads.js';
+import servicesRouter from './src/server/routes/services.js';
+import amcPlansRouter from './src/server/routes/amcPlans.js';
+import partnersRouter from './src/server/routes/partners.js';
+import hrRouter from './src/server/routes/hr.js';
+import payrollRouter from './src/server/routes/payroll.js';
 
 async function startServer() {
   const app = express();
@@ -105,8 +112,15 @@ async function startServer() {
   app.use('/api/v1/customer', customerRouter);
   app.use('/api/v1/technician', technicianRouter);
   app.use('/api/v1/admin', adminRouter);
+  app.use('/api/v1/leads', leadsRouter);
+  app.use('/api/v1/payments', paymentsRouter);
   app.use('/api/v1/webhooks', webhooksRouter);
   app.use('/api/v1/uploads', uploadsRouter);
+  app.use('/api/v1/services', servicesRouter);
+  app.use('/api/v1/amc-plans', amcPlansRouter);
+  app.use('/api/v1/partners', partnersRouter);
+  app.use('/api/v1/hr', hrRouter);
+  app.use('/api/v1/payroll', payrollRouter);
   app.use('/api/v1', metadataRouter);
 
   // Vite middleware for development

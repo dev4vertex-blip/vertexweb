@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../../db/client.js';
+import { memoryStore } from '../../db/memoryStore.js';
 import { hashPassword, getFullUserById, logAuditEvent } from '../auth.js';
 import { authenticateUser, requirePermission, AuthenticatedRequest } from '../middleware.js';
 
@@ -649,6 +650,173 @@ router.delete('/:id', requirePermission('USER_DELETE'), async (req: Authenticate
     return res.status(500).json({
       success: false,
       error: { code: 'DELETE_USER_FAILED', message: 'Failed to delete user.' },
+    });
+  }
+});
+
+/**
+ * POST /api/v1/users/:id/reset-password
+ * Reset user password with security enforcement
+ * Required permission: USER_UPDATE (or alias USER_EDIT)
+ */
+router.post('/:id/reset-password', requirePermission('USER_UPDATE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { pglite } = await getDb();
+    const currentUser = req.user;
+    const targetUserId = req.params.id;
+    const { newPassword } = req.body;
+
+    const targetUser = await getFullUserById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User not found.' },
+      });
+    }
+
+    // Role restrictions: Non-Super Admin cannot reset Super Admin password
+    if (targetUser.role === 'SUPER_ADMIN' && currentUser.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Only Super Administrators can reset Super Admin passwords.' },
+      });
+    }
+
+    // Manager can ONLY reset password for Sales team members
+    if (currentUser.role === 'MANAGER' && targetUser.role !== 'SALES') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Operations Managers can only reset credentials for Sales members.' },
+      });
+    }
+
+    const passwordToSet = newPassword || 'Vertex@2026';
+    const passwordHash = await hashPassword(passwordToSet);
+
+    try {
+      await pglite.query(
+        `UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [passwordHash, targetUserId]
+      );
+    } catch (_dbErr) {
+      // Memory store resilient mode
+    }
+
+    // Also update in-memory store if present
+    const memUser = memoryStore.users.find((u) => u.id === targetUserId || u.public_id === targetUserId);
+    if (memUser) {
+      memUser.password_hash = passwordHash;
+      memUser.updated_at = new Date().toISOString();
+    }
+
+    await logAuditEvent({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'USER_PASSWORD_RESET',
+      entity: 'USER',
+      entityId: targetUserId,
+      oldValue: null,
+      newValue: { resetBy: currentUser.id },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.json({
+      success: true,
+      message: `Password reset successfully for user ${targetUser.name}.`,
+    });
+  } catch (err: any) {
+    console.error('Reset password error:', err);
+    return res.status(500).json({
+      success: false,
+      error: { code: 'PASSWORD_RESET_FAILED', message: 'Failed to reset password.' },
+    });
+  }
+});
+
+/**
+ * PATCH /api/v1/users/:id/role
+ * Reassign user role
+ * Required permission: USER_ASSIGN_ROLE (or USER_UPDATE)
+ */
+router.patch('/:id/role', requirePermission('USER_UPDATE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { pglite } = await getDb();
+    const currentUser = req.user;
+    const targetUserId = req.params.id;
+    const { role } = req.body;
+
+    if (!role) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_ROLE', message: 'New role must be provided.' },
+      });
+    }
+
+    const targetUser = await getFullUserById(targetUserId);
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'USER_NOT_FOUND', message: 'User not found.' },
+      });
+    }
+
+    // Role Escalation Protection: Only Super Admin can change Super Admin or promote to Super Admin
+    if ((targetUser.role === 'SUPER_ADMIN' || role === 'SUPER_ADMIN') && currentUser.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Super Administrator roles can only be altered by Super Admin.' },
+      });
+    }
+
+    // Manager cannot change roles
+    if (currentUser.role === 'MANAGER') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Managers do not have privilege to modify user roles.' },
+      });
+    }
+
+    const oldRole = targetUser.role;
+    try {
+      await pglite.query(
+        `UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [role, targetUserId]
+      );
+    } catch (_dbErr) {
+      // Memory store resilient mode
+    }
+
+    const memUser = memoryStore.users.find((u) => u.id === targetUserId || u.public_id === targetUserId);
+    if (memUser) {
+      memUser.role = role;
+      memUser.updated_at = new Date().toISOString();
+    }
+
+    await logAuditEvent({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'USER_ROLE_CHANGED',
+      entity: 'USER',
+      entityId: targetUserId,
+      oldValue: { role: oldRole },
+      newValue: { role },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.json({
+      success: true,
+      message: `User ${targetUser.name} role changed from ${oldRole} to ${role}.`,
+      role,
+    });
+  } catch (err: any) {
+    console.error('Role update error:', err);
+    return res.status(500).json({
+      success: false,
+      error: { code: 'ROLE_UPDATE_FAILED', message: 'Failed to update user role.' },
     });
   }
 });

@@ -8,7 +8,7 @@ const router = Router();
 
 // Strictly guard all admin endpoints: require staff credentials
 router.use(authenticateUser);
-router.use(requireRole(['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE']));
+router.use(requireRole(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES', 'SALES_TEAM', 'FINANCE', 'MARKETING', 'OPERATIONS', 'SUPPORT', 'HR', 'PAYROLL']));
 
 /**
  * GET /api/v1/admin/stats
@@ -201,6 +201,171 @@ router.get('/customers', requirePermission('CUSTOMER_VIEW'), async (req: Authent
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to fetch customers';
+    return res.status(500).json({ success: false, error: msg });
+  }
+});
+
+/**
+ * POST /api/v1/admin/customers
+ * Create a new customer record
+ * Required permission: CUSTOMER_CREATE
+ */
+router.post('/customers', requirePermission('CUSTOMER_CREATE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { pglite } = await getDb();
+    const currentUser = req.user;
+    const { name, email, phone, city, customer_type, notes } = req.body;
+
+    if (!name || name.trim().length < 2) {
+      return res.status(400).json({ success: false, error: 'Customer name is required (min 2 chars).' });
+    }
+    if (!phone || phone.trim().length < 8) {
+      return res.status(400).json({ success: false, error: 'Valid phone number is required.' });
+    }
+
+    const nextSeq = memoryStore.users.length + 1;
+    const publicId = `VXUSR-${String(nextSeq).padStart(6, '0')}`;
+    const newCustId = `cust-${Date.now()}`;
+
+    const newCustomer = {
+      id: newCustId,
+      public_id: publicId,
+      name: name.trim(),
+      email: email ? email.trim().toLowerCase() : null,
+      phone: phone.trim(),
+      password_hash: null,
+      role: 'CUSTOMER',
+      status: 'ACTIVE',
+      profile_image: name.slice(0, 2).toUpperCase(),
+      city_id: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_login_at: null,
+      deleted_at: null,
+    };
+
+    memoryStore.users.push(newCustomer);
+    memoryStore.customerProfiles.push({
+      id: `cust-prof-${Date.now()}`,
+      user_id: newCustId,
+      customer_type: customer_type || 'INDIVIDUAL',
+    });
+
+    await logAuditEvent({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'CUSTOMER_CREATED',
+      entity: 'CUSTOMER',
+      entityId: newCustId,
+      newValue: { name, email, phone, customer_type },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: `Customer ${name} (${publicId}) created successfully.`,
+      data: newCustomer,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to create customer';
+    return res.status(500).json({ success: false, error: msg });
+  }
+});
+
+/**
+ * PUT /api/v1/admin/customers/:id
+ * Update customer details
+ * Required permission: CUSTOMER_UPDATE (or CUSTOMER_EDIT)
+ */
+router.put('/customers/:id', requirePermission('CUSTOMER_UPDATE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const currentUser = req.user;
+    const { name, email, phone, city, status } = req.body;
+
+    const customer = memoryStore.users.find(
+      (u) => (u.id === id || u.public_id === id) && u.role === 'CUSTOMER' && !u.deleted_at
+    );
+
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found.' });
+    }
+
+    const oldValues = { name: customer.name, email: customer.email, phone: customer.phone, status: customer.status };
+
+    if (name !== undefined) customer.name = name.trim();
+    if (email !== undefined) customer.email = email ? email.trim().toLowerCase() : null;
+    if (phone !== undefined) customer.phone = phone.trim();
+    if (status !== undefined) customer.status = status;
+    customer.updated_at = new Date().toISOString();
+
+    await logAuditEvent({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'CUSTOMER_UPDATED',
+      entity: 'CUSTOMER',
+      entityId: customer.id,
+      oldValue: oldValues,
+      newValue: { name: customer.name, email: customer.email, phone: customer.phone, status: customer.status },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.json({
+      success: true,
+      message: `Customer ${customer.name} updated successfully.`,
+      data: customer,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to update customer';
+    return res.status(500).json({ success: false, error: msg });
+  }
+});
+
+/**
+ * DELETE /api/v1/admin/customers/:id
+ * Soft delete customer
+ * Required permission: CUSTOMER_DELETE
+ */
+router.delete('/customers/:id', requirePermission('CUSTOMER_DELETE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const currentUser = req.user;
+
+    const customer = memoryStore.users.find(
+      (u) => (u.id === id || u.public_id === id) && u.role === 'CUSTOMER' && !u.deleted_at
+    );
+
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found.' });
+    }
+
+    customer.deleted_at = new Date().toISOString();
+    customer.status = 'DELETED';
+    customer.updated_at = new Date().toISOString();
+
+    await logAuditEvent({
+      userId: currentUser.id,
+      userName: currentUser.name,
+      userRole: currentUser.role,
+      action: 'CUSTOMER_DELETED',
+      entity: 'CUSTOMER',
+      entityId: customer.id,
+      oldValue: { name: customer.name, public_id: customer.public_id },
+      newValue: { deleted_at: customer.deleted_at },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.json({
+      success: true,
+      message: `Customer ${customer.name} (${customer.public_id}) deleted successfully.`,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to delete customer';
     return res.status(500).json({ success: false, error: msg });
   }
 });

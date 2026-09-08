@@ -78,7 +78,7 @@ export const AdminLoginView: React.FC<AdminLoginViewProps> = ({ onSuccess }) => 
       });
 
       // Strict role verification: only authorized internal roles can enter Admin Web
-      const isStaffRole = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES', 'FINANCE'].includes(user.role);
+      const isStaffRole = ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES', 'SALES_TEAM', 'FINANCE', 'MARKETING', 'OPERATIONS', 'SUPPORT'].includes(user.role);
       if (!isStaffRole) {
         await logout();
         throw new Error('Access denied. VERTEX Admin Web is reserved exclusively for authorized internal personnel. Customer and Technician accounts cannot access this portal.');

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -8,6 +8,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '.
 import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { auditService } from '../../auth/audit';
+import { api } from '../../services/api';
 import {
   Search,
   Plus,
@@ -99,6 +100,56 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   const { user, canPerformAction } = useAuth();
   const { addToast } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Live data fetched from RBAC endpoints
+  const [liveServices, setLiveServices] = useState<any[]>([]);
+  const [liveAmcPlans, setLiveAmcPlans] = useState<any[]>([]);
+  const [livePartners, setLivePartners] = useState<any[]>([]);
+  const [liveCommissions, setLiveCommissions] = useState<any[]>([]);
+  const [liveEmployees, setLiveEmployees] = useState<any[]>([]);
+  const [livePayrollRuns, setLivePayrollRuns] = useState<any[]>([]);
+  const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setIsLoadingLive(true);
+
+    const fetchData = async () => {
+      try {
+        if (sectionKey === 'services' || sectionKey === 'service-catalog') {
+          const res = await api.getServices();
+          if (isCurrent && Array.isArray(res)) setLiveServices(res);
+        } else if (sectionKey === 'amc') {
+          const res = await api.getAmcPlans();
+          if (isCurrent && Array.isArray(res)) setLiveAmcPlans(res);
+        } else if (sectionKey === 'partners') {
+          const [p, c] = await Promise.all([
+            api.getPartners().catch(() => []),
+            api.getPartnerCommissions().catch(() => []),
+          ]);
+          if (isCurrent) {
+            if (Array.isArray(p)) setLivePartners(p);
+            if (Array.isArray(c)) setLiveCommissions(c);
+          }
+        } else if (sectionKey === 'hr') {
+          const res = await api.getHrEmployees();
+          if (isCurrent && Array.isArray(res)) setLiveEmployees(res);
+        } else if (sectionKey === 'payroll') {
+          const res = await api.getPayrollRuns();
+          if (isCurrent && Array.isArray(res)) setLivePayrollRuns(res);
+        }
+      } catch (e) {
+        console.warn(`[AdminGenericSectionView] Failed to fetch data for ${sectionKey}:`, e);
+      } finally {
+        if (isCurrent) setIsLoadingLive(false);
+      }
+    };
+
+    fetchData();
+    return () => {
+      isCurrent = false;
+    };
+  }, [sectionKey]);
 
   // Sales team state
   const [salesMembers, setSalesMembers] = useState<SalesTeamMember[]>(INITIAL_SALES_MEMBERS);
@@ -444,26 +495,39 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[
-                  { name: 'AC Deep Power Jet Cleaning', cat: 'AC Service & Repair', price: '₹499', dur: '45 mins', war: '30 Days', status: 'Live' },
-                  { name: 'Split AC Gas Charging (R32/R410)', cat: 'AC Service & Repair', price: '₹1,499', dur: '60 mins', war: '60 Days', status: 'Live' },
-                  { name: 'Full Home Electrical Audit', cat: 'Electrician Services', price: '₹799', dur: '90 mins', war: '30 Days', status: 'Live' },
-                  { name: 'Bathroom Concealed Leakage Detection', cat: 'Plumbing Solutions', price: '₹599', dur: '60 mins', war: '30 Days', status: 'Live' },
-                  { name: 'Copper Filter RO Service & Membrane', cat: 'Water Purifier (RO)', price: '₹899', dur: '45 mins', war: '90 Days', status: 'Live' },
-                ].map((s, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="font-bold text-slate-900">{s.name}</TableCell>
-                    <TableCell>{s.cat}</TableCell>
-                    <TableCell className="font-extrabold text-slate-900">{s.price}</TableCell>
-                    <TableCell>{s.dur}</TableCell>
-                    <TableCell>{s.war}</TableCell>
-                    <TableCell>
-                      <Badge variant="success" size="sm">
-                        {s.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {(liveServices.length > 0
+                  ? liveServices.map((s) => ({
+                      id: s.id,
+                      name: s.name,
+                      cat: s.category_name || s.category_id || 'General Catalog',
+                      price: `₹${s.base_price}`,
+                      dur: s.duration_minutes ? `${s.duration_minutes} mins` : '45 mins',
+                      war: s.warranty_days ? `${s.warranty_days} Days` : '30 Days',
+                      status: s.is_active ? 'Live' : 'Inactive',
+                    }))
+                  : [
+                      { name: 'AC Deep Power Jet Cleaning', cat: 'AC Service & Repair', price: '₹499', dur: '45 mins', war: '30 Days', status: 'Live' },
+                      { name: 'Split AC Gas Charging (R32/R410)', cat: 'AC Service & Repair', price: '₹1,499', dur: '60 mins', war: '60 Days', status: 'Live' },
+                      { name: 'Full Home Electrical Audit', cat: 'Electrician Services', price: '₹799', dur: '90 mins', war: '30 Days', status: 'Live' },
+                      { name: 'Bathroom Concealed Leakage Detection', cat: 'Plumbing Solutions', price: '₹599', dur: '60 mins', war: '30 Days', status: 'Live' },
+                      { name: 'Copper Filter RO Service & Membrane', cat: 'Water Purifier (RO)', price: '₹899', dur: '45 mins', war: '90 Days', status: 'Live' },
+                    ]
+                )
+                  .filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.cat.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .map((s, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell className="font-bold text-slate-900">{s.name}</TableCell>
+                      <TableCell>{s.cat}</TableCell>
+                      <TableCell className="font-extrabold text-slate-900">{s.price}</TableCell>
+                      <TableCell>{s.dur}</TableCell>
+                      <TableCell>{s.war}</TableCell>
+                      <TableCell>
+                        <Badge variant={s.status === 'Live' ? 'success' : 'neutral'} size="sm">
+                          {s.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </div>
@@ -638,23 +702,36 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {[
-                  { id: 'AMC-2026-08', name: 'Rahul Sharma (Villa 14B)', plan: 'Residential Shield Pro', fee: '₹8,499', vis: '2 of 6', exp: '14 May 2027', st: 'Active' },
-                  { id: 'AMC-2026-07', name: 'CoWork Central Space', plan: 'Corporate Facility Plus', fee: '₹14,999', vis: '5 of 12', exp: '28 Feb 2027', st: 'Active' },
-                  { id: 'AMC-2026-06', name: 'Hamilton Towers Society', plan: 'Commercial Enterprise', fee: '₹34,500', vis: '8 of 18', exp: '30 Nov 2026', st: 'Active' },
-                ].map((c, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono font-bold text-xs text-slate-900">{c.id}</TableCell>
-                    <TableCell className="font-bold text-slate-900">{c.name}</TableCell>
-                    <TableCell>{c.plan}</TableCell>
-                    <TableCell className="font-extrabold text-slate-900">{c.fee}</TableCell>
-                    <TableCell className="font-medium text-slate-700">{c.vis}</TableCell>
-                    <TableCell>{c.exp}</TableCell>
-                    <TableCell>
-                      <Badge variant="success" size="sm">{c.st}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {(liveAmcPlans.length > 0
+                  ? liveAmcPlans.map((c) => ({
+                      id: c.public_id || c.id,
+                      name: c.title || c.name,
+                      plan: c.target_tier || 'PRO',
+                      fee: `₹${c.base_price}/yr`,
+                      vis: `${c.annual_preventive_visits || 4} Visits/Yr`,
+                      exp: c.is_active ? 'Active Plan' : 'Draft',
+                      st: c.is_active ? 'Active' : 'Inactive',
+                    }))
+                  : [
+                      { id: 'AMC-2026-08', name: 'Rahul Sharma (Villa 14B)', plan: 'Residential Shield Pro', fee: '₹8,499', vis: '2 of 6', exp: '14 May 2027', st: 'Active' },
+                      { id: 'AMC-2026-07', name: 'CoWork Central Space', plan: 'Corporate Facility Plus', fee: '₹14,999', vis: '5 of 12', exp: '28 Feb 2027', st: 'Active' },
+                      { id: 'AMC-2026-06', name: 'Hamilton Towers Society', plan: 'Commercial Enterprise', fee: '₹34,500', vis: '8 of 18', exp: '30 Nov 2026', st: 'Active' },
+                    ]
+                )
+                  .filter((c) => c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.plan.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .map((c, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="font-mono font-bold text-xs text-slate-900">{c.id}</TableCell>
+                      <TableCell className="font-bold text-slate-900">{c.name}</TableCell>
+                      <TableCell>{c.plan}</TableCell>
+                      <TableCell className="font-extrabold text-slate-900">{c.fee}</TableCell>
+                      <TableCell className="font-medium text-slate-700">{c.vis}</TableCell>
+                      <TableCell>{c.exp}</TableCell>
+                      <TableCell>
+                        <Badge variant={c.st === 'Active' ? 'success' : 'neutral'} size="sm">{c.st}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </div>
@@ -777,6 +854,295 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 ))}
               </TableBody>
             </Table>
+          </div>
+        );
+
+      case 'partners':
+        return (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Channel Partners</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">4 Active</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Total Referrals</span>
+                <div className="text-2xl font-black text-blue-600 mt-1">104 Bookings</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Commissions Paid</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">₹42,300</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Pending Approvals</span>
+                <div className="text-2xl font-black text-amber-600 mt-1">₹1,050 (1 Dues)</div>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Partner Commission Management & Versioned Rules</h3>
+                  <p className="text-xs text-slate-500">Tier-based percentage and fixed referral commissions with approval workflows</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline">Create Commission Rule</Button>
+                  <Button size="sm" variant="primary">Onboard Channel Partner</Button>
+                </div>
+              </div>
+
+              <div className="border-b border-slate-200">
+                <div className="flex gap-4 text-xs font-bold text-slate-600">
+                  <span className="border-b-2 border-slate-900 pb-2 text-slate-900 cursor-pointer">Channel Partners</span>
+                  <span className="pb-2 text-slate-500 hover:text-slate-800 cursor-pointer">Commission Rules (v1/v2)</span>
+                  <span className="pb-2 text-slate-500 hover:text-slate-800 cursor-pointer">Approval Queue (1 Pending)</span>
+                </div>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Partner Entity</TableHead>
+                    <TableHead>Contact Person</TableHead>
+                    <TableHead>Tier</TableHead>
+                    <TableHead>Referrals</TableHead>
+                    <TableHead>Earned</TableHead>
+                    <TableHead>Paid</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(livePartners.length > 0
+                    ? livePartners.map((ptnr) => ({
+                        id: ptnr.public_id || ptnr.id,
+                        name: ptnr.company_name || ptnr.name,
+                        contact: ptnr.contact_person || 'Managing Director',
+                        tier: ptnr.tier || 'STANDARD',
+                        refs: ptnr.total_referrals ?? 0,
+                        earned: `₹${(ptnr.total_commission_earned ?? 0).toLocaleString()}`,
+                        paid: `₹${(ptnr.total_commission_paid ?? 0).toLocaleString()}`,
+                        st: ptnr.status || 'ACTIVE',
+                      }))
+                    : [
+                        { id: 'VXPTN-0001', name: 'Urban Facility Solutions LLP', contact: 'Vikas Agarwal', tier: 'ENTERPRISE', refs: 48, earned: '₹24,500', paid: '₹22,000', st: 'ACTIVE' },
+                        { id: 'VXPTN-0002', name: 'Metro Cooling Hub Associates', contact: 'Rajesh Nair', tier: 'PREMIUM', refs: 32, earned: '₹14,200', paid: '₹14,200', st: 'ACTIVE' },
+                        { id: 'VXPTN-0003', name: 'Apex Living Residential Care', contact: 'Pooja Verma', tier: 'STANDARD', refs: 18, earned: '₹6,800', paid: '₹6,100', st: 'ACTIVE' },
+                        { id: 'VXPTN-0004', name: 'Smart Spaces Commercial PM', contact: 'Sunil Rao', tier: 'ENTERPRISE', refs: 6, earned: '₹2,400', paid: '₹0', st: 'ACTIVE' },
+                      ]
+                  )
+                    .filter((ptnr) => ptnr.name.toLowerCase().includes(searchTerm.toLowerCase()) || ptnr.contact.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map((ptnr) => (
+                      <TableRow key={ptnr.id}>
+                        <TableCell>
+                          <div className="font-bold text-slate-900">{ptnr.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{ptnr.id}</div>
+                        </TableCell>
+                        <TableCell className="font-medium text-slate-700">{ptnr.contact}</TableCell>
+                        <TableCell>
+                          <Badge variant="neutral" size="sm">{ptnr.tier}</Badge>
+                        </TableCell>
+                        <TableCell className="font-semibold text-slate-900">{ptnr.refs}</TableCell>
+                        <TableCell className="font-bold text-emerald-600">{ptnr.earned}</TableCell>
+                        <TableCell className="text-slate-700">{ptnr.paid}</TableCell>
+                        <TableCell>
+                          <Badge variant={ptnr.st === 'ACTIVE' ? 'success' : 'neutral'} size="sm">{ptnr.st}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button size="sm" variant="ghost" className="text-xs">Manage</Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        );
+
+      case 'hr':
+        return (
+          <div className="space-y-6">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-center justify-between">
+              <span><strong>Staff Personnel Module:</strong> Strictly covers internal on-roll employees, dispatchers, technicians, and hub supervisors.</span>
+              <Badge variant="primary" size="sm">Internal Personnel</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Total Staff</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">3 On-Roll</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Today Attendance</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">100% Present</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Pending Leave Requests</span>
+                <div className="text-2xl font-black text-amber-600 mt-1">1 Pending</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Active Departments</span>
+                <div className="text-2xl font-black text-purple-600 mt-1">3 Departments</div>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">On-Roll Employees & Lifecycle Management</h3>
+                  <p className="text-xs text-slate-500">Shifts, attendance regularization, leave approval workflows, and exit tracking</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline">Regularize Attendance</Button>
+                  <Button size="sm" variant="primary">Onboard Employee</Button>
+                </div>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Employee Code & Name</TableHead>
+                    <TableHead>Department</TableHead>
+                    <TableHead>Designation</TableHead>
+                    <TableHead>Joining Date</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(liveEmployees.length > 0
+                    ? liveEmployees.map((emp) => ({
+                        code: emp.employee_code || emp.id,
+                        name: `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.name,
+                        dept: emp.department_name || emp.department_id || 'Operations',
+                        title: emp.designation_title || emp.designation_id || 'Staff Specialist',
+                        doj: emp.date_of_joining ? new Date(emp.date_of_joining).toLocaleDateString() : 'Active',
+                        type: emp.employment_type || 'FULL_TIME',
+                        st: emp.status || 'ACTIVE',
+                      }))
+                    : [
+                        { code: 'VXEMP-0001', name: 'Vikram Malhotra', dept: 'Field Operations', title: 'Senior HVAC Lead Technician', doj: '15 Jan 2024', type: 'FULL_TIME', st: 'ACTIVE' },
+                        { code: 'VXEMP-0002', name: 'Priya Sharma', dept: 'Human Resources', title: 'HR Generalist & Talent Lead', doj: '01 Mar 2024', type: 'FULL_TIME', st: 'ACTIVE' },
+                        { code: 'VXEMP-0003', name: 'Rohan Saxena', dept: 'Finance & Accounts', title: 'Payroll & Compliance Specialist', doj: '10 Feb 2024', type: 'FULL_TIME', st: 'ACTIVE' },
+                      ]
+                  )
+                    .filter((emp) => emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || emp.dept.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map((emp) => (
+                      <TableRow key={emp.code}>
+                        <TableCell>
+                          <div className="font-bold text-slate-900">{emp.name}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">{emp.code}</div>
+                        </TableCell>
+                        <TableCell className="font-medium text-slate-700">{emp.dept}</TableCell>
+                        <TableCell>{emp.title}</TableCell>
+                        <TableCell className="text-xs text-slate-600">{emp.doj}</TableCell>
+                        <TableCell>
+                          <Badge variant="neutral" size="sm">{emp.type}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={emp.st === 'ACTIVE' ? 'success' : 'neutral'} size="sm">{emp.st}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Button size="sm" variant="ghost" className="text-xs">Profile</Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        );
+
+      case 'payroll':
+        return (
+          <div className="space-y-6">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600 flex items-center justify-between">
+              <span><strong>Statutory Advisory:</strong> Salary computation calculations (PF 12%, PT, TDS) are advisory internal baselines. Review with qualified payroll compliance officers before tax remittances.</span>
+              <Badge variant="warning" size="sm">Advisory Only</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Current Payroll Run</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">Feb 2026</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Total Net Disbursed</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">₹1,36,500</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Total PF/PT Deductions</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">₹18,500</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs uppercase font-bold text-slate-400">Cycle Status</span>
+                <div className="text-2xl font-black text-blue-600 mt-1">FINALIZED</div>
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Monthly Payroll Processing & Salary Structures</h3>
+                  <p className="text-xs text-slate-500">Attendance-based computations, approval lifecycle, and locked payslips generation</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline">Configure Structures</Button>
+                  <Button size="sm" variant="primary">Initiate March Run</Button>
+                </div>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cycle Title</TableHead>
+                    <TableHead>Employees</TableHead>
+                    <TableHead>Gross Total</TableHead>
+                    <TableHead>Deductions</TableHead>
+                    <TableHead>Net Payout</TableHead>
+                    <TableHead>Cycle Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(livePayrollRuns.length > 0
+                    ? livePayrollRuns.map((run) => ({
+                        id: run.id,
+                        title: run.title || `${run.month}/${run.year} Staff Payroll`,
+                        emps: run.total_employees ?? 3,
+                        gross: `₹${(run.total_gross || 0).toLocaleString()}`,
+                        ded: `₹${(run.total_deductions || 0).toLocaleString()}`,
+                        net: `₹${(run.total_net || 0).toLocaleString()}`,
+                        st: run.status || 'DRAFT',
+                      }))
+                    : [
+                        { id: 'prun-2026-02', title: 'February 2026 Staff Payroll', emps: 3, gross: '₹1,55,000', ded: '₹18,500', net: '₹1,36,500', st: 'FINALIZED' },
+                        { id: 'prun-2026-01', title: 'January 2026 Staff Payroll', emps: 3, gross: '₹1,55,000', ded: '₹18,500', net: '₹1,36,500', st: 'FINALIZED' },
+                      ]
+                  )
+                    .filter((run) => run.title.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map((run) => (
+                      <TableRow key={run.id}>
+                        <TableCell className="font-bold text-slate-900">{run.title}</TableCell>
+                        <TableCell className="font-semibold">{run.emps} Staff</TableCell>
+                        <TableCell className="font-bold text-slate-900">{run.gross}</TableCell>
+                        <TableCell className="text-rose-600 font-medium">{run.ded}</TableCell>
+                        <TableCell className="font-black text-emerald-600">{run.net}</TableCell>
+                        <TableCell>
+                          <Badge variant={run.st === 'FINALIZED' ? 'success' : run.st === 'APPROVED' ? 'primary' : 'neutral'} size="sm">{run.st}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" className="text-xs">View Slips</Button>
+                            <Button size="sm" variant="outline" className="text-xs">Export</Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         );
 

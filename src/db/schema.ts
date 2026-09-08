@@ -163,7 +163,7 @@ export const auditLogs = pgTable('audit_logs', {
   userId: text('user_id'), // User UUID or null for system
   userName: text('user_name').notNull(),
   userRole: text('user_role').notNull(),
-  action: text('action').notNull(), // 'LOGIN' | 'LOGOUT' | 'USER_CREATED' | 'USER_UPDATED' | 'USER_ACTIVATED' | 'USER_DEACTIVATED' | 'ROLE_CHANGED' | 'PERMISSION_CHANGED' | 'UNAUTHORIZED_ACCESS_ATTEMPT'
+  action: text('action').notNull(),
   entity: text('entity').default('USER').notNull(),
   entityId: text('entity_id'),
   oldValue: text('old_value'), // JSON string (sensitive secrets masked/never stored)
@@ -171,6 +171,78 @@ export const auditLogs = pgTable('audit_logs', {
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ----------------------------------------------------
+// 14. LEADS (Sales CRM & Pipeline Management)
+// ----------------------------------------------------
+export const leads = pgTable('leads', {
+  id: text('id').primaryKey(), // UUID
+  publicId: text('public_id').notNull().unique(), // e.g. 'VXLD-000001'
+  customerName: text('customer_name').notNull(),
+  email: text('email'),
+  phone: text('phone').notNull(),
+  serviceInterest: text('service_interest').notNull(),
+  requirementDetails: text('requirement_details'),
+  estimatedValue: numeric('estimated_value').default('0').notNull(),
+  assignedTo: text('assigned_to').references(() => users.id),
+  assignedToName: text('assigned_to_name'),
+  createdBy: text('created_by').references(() => users.id).notNull(),
+  stage: text('stage').default('NEW').notNull(), // 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'SITE_VISIT_SCHEDULED' | 'PROPOSAL_SENT' | 'NEGOTIATION' | 'WON' | 'LOST'
+  status: text('status').default('ACTIVE').notNull(), // 'ACTIVE' | 'WON' | 'LOST' | 'ARCHIVED'
+  lossReason: text('loss_reason'),
+  wonBookingId: text('won_booking_id'),
+  wonCustomerId: text('won_customer_id'),
+  cityId: integer('city_id').references(() => cities.id),
+  cityName: text('city_name'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'),
+});
+
+// ----------------------------------------------------
+// 15. LEAD_FOLLOWUPS
+// ----------------------------------------------------
+export const leadFollowups = pgTable('lead_followups', {
+  id: text('id').primaryKey(),
+  leadId: text('lead_id').references(() => leads.id, { onDelete: 'cascade' }).notNull(),
+  scheduledDate: text('scheduled_date').notNull(),
+  notes: text('notes').notNull(),
+  outcome: text('outcome'),
+  completed: boolean('completed').default(false).notNull(),
+  completedBy: text('completed_by'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ----------------------------------------------------
+// 16. PAYMENTS (Transactions & Collections)
+// ----------------------------------------------------
+export const payments = pgTable('payments', {
+  id: text('id').primaryKey(), // UUID
+  publicId: text('public_id').notNull().unique(), // e.g. 'PAY-2026-0001'
+  bookingId: text('booking_id'),
+  customerId: text('customer_id').references(() => users.id),
+  customerName: text('customer_name').notNull(),
+  customerPhone: text('customer_phone'),
+  amount: numeric('amount').notNull(),
+  currency: text('currency').default('INR').notNull(),
+  paymentMethod: text('payment_method').notNull(), // 'CASH' | 'UPI' | 'CARD' | 'NET_BANKING' | 'CHEQUE'
+  paymentReference: text('payment_reference'),
+  status: text('status').default('COLLECTED').notNull(), // 'PENDING' | 'COLLECTED' | 'VERIFIED' | 'REFUNDED' | 'FAILED'
+  collectedBy: text('collected_by').references(() => users.id).notNull(),
+  collectedByName: text('collected_by_name').notNull(),
+  collectedAt: timestamp('collected_at').defaultNow().notNull(),
+  notes: text('notes'),
+  receiptNumber: text('receipt_number'),
+  verifiedBy: text('verified_by').references(() => users.id),
+  verifiedAt: timestamp('verified_at'),
+  refundReason: text('refund_reason'),
+  refundStatus: text('refund_status').default('NONE').notNull(), // 'NONE' | 'REQUESTED' | 'APPROVED' | 'REJECTED'
+  refundAmount: numeric('refund_amount'),
+  refundApprovedBy: text('refund_approved_by'),
+  idempotencyKey: text('idempotency_key').unique(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
 // ----------------------------------------------------
