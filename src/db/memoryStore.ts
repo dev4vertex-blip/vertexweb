@@ -91,6 +91,8 @@ export interface UserRecord {
   status: string;
   profile_image: string | null;
   city_id: number | null;
+  department?: string | null;
+  designation?: string | null;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
@@ -180,10 +182,15 @@ export interface LeadFollowupRecord {
   id: string;
   lead_id: string;
   scheduled_date: string;
+  scheduled_time?: string | null;
+  followup_type?: string | null;
   notes: string;
   outcome?: string | null;
+  status?: 'OPEN' | 'COMPLETED' | 'CANCELLED';
   completed: boolean;
+  completed_at?: string | null;
   completed_by?: string | null;
+  cancellation_reason?: string | null;
   created_at: string;
 }
 
@@ -191,11 +198,17 @@ export interface LeadRecord {
   id: string;
   public_id: string;
   customer_name: string;
+  company_name?: string | null;
   email?: string | null;
   phone: string;
+  alternate_phone?: string | null;
+  address?: string | null;
   service_interest: string;
+  service_category?: string | null;
   requirement_details?: string | null;
   estimated_value: number;
+  lead_source?: string;
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   assigned_to?: string | null;
   assigned_to_name?: string | null;
   created_by: string;
@@ -207,7 +220,15 @@ export interface LeadRecord {
   won_customer_id?: string | null;
   city_id?: number | null;
   city_name?: string | null;
+  expected_followup_date?: string | null;
+  expected_followup_time?: string | null;
+  notes?: string | null;
   followups?: LeadFollowupRecord[];
+  // Compatibility aliases
+  lead_number?: string;
+  customer_phone?: string;
+  service_requirement?: string;
+  source?: string;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -384,7 +405,10 @@ class MemoryStore {
     { code: 'SERVICE_ACTIVATE', name: 'Activate Services', category: 'Catalog', description: 'Activate service in public catalog', created_at: new Date().toISOString() },
     { code: 'SERVICE_DEACTIVATE', name: 'Deactivate Services', category: 'Catalog', description: 'Deactivate service from catalog', created_at: new Date().toISOString() },
     { code: 'SERVICE_PRICE_EDIT', name: 'Edit Service Prices', category: 'Catalog', description: 'Modify pricing tiers and base charges', created_at: new Date().toISOString() },
+    { code: 'SERVICE_MANAGE', name: 'Manage Services Catalog', category: 'Catalog', description: 'Full service catalog administration', created_at: new Date().toISOString() },
     { code: 'SERVICE_CATEGORY_MANAGE', name: 'Manage Service Categories', category: 'Catalog', description: 'Configure taxonomy and service categories', created_at: new Date().toISOString() },
+    { code: 'CATEGORY_VIEW', name: 'View Service Categories', category: 'Catalog', description: 'Browse service taxonomy and categories', created_at: new Date().toISOString() },
+    { code: 'CATEGORY_MANAGE', name: 'Manage Service Categories Master', category: 'Catalog', description: 'Create and update service categories', created_at: new Date().toISOString() },
     // AMC Plan Master Permissions
     { code: 'AMC_PLAN_CREATE', name: 'Create AMC Plans', category: 'Contracts', description: 'Create new annual maintenance packages', created_at: new Date().toISOString() },
     { code: 'AMC_PLAN_VIEW', name: 'View AMC Plans', category: 'Contracts', description: 'View AMC plan configuration', created_at: new Date().toISOString() },
@@ -475,6 +499,7 @@ class MemoryStore {
   ];
 
   public rolePermissions: { role_code: string; permission_code: string }[] = [];
+  public userPermissions: { user_id: string; permission_code: string }[] = [];
 
   public users: UserRecord[] = [
     {
@@ -1334,7 +1359,7 @@ class MemoryStore {
       'USER_VIEW', 'USER_CREATE', 'USER_UPDATE', 'USER_EDIT', 'USER_DEACTIVATE', 'USER_ACTIVATE',
       'ROLE_VIEW',
       'CUSTOMER_VIEW', 'CUSTOMER_CREATE', 'CUSTOMER_UPDATE', 'CUSTOMER_EDIT',
-      'LEAD_VIEW', 'LEAD_CREATE', 'LEAD_EDIT', 'LEAD_ASSIGN', 'LEAD_REASSIGN', 'LEAD_FOLLOWUP_CREATE', 'LEAD_FOLLOWUP_COMPLETE', 'LEAD_CONVERT', 'LEAD_WON', 'LEAD_LOST',
+      'LEAD_VIEW', 'LEAD_CREATE', 'LEAD_EDIT', 'LEAD_ASSIGN', 'LEAD_REASSIGN', 'LEAD_FOLLOWUP_CREATE', 'LEAD_FOLLOWUP_COMPLETE', 'LEAD_CONVERT', 'LEAD_WON', 'LEAD_LOST', 'LEAD_MARK_WON', 'LEAD_MARK_LOST',
       'BOOKING_VIEW', 'BOOKING_CREATE', 'BOOKING_UPDATE', 'BOOKING_EDIT', 'BOOKING_ASSIGN', 'BOOKING_CANCEL',
       'TECHNICIAN_VIEW', 'TECHNICIAN_CREATE', 'TECHNICIAN_UPDATE', 'TECHNICIAN_ASSIGN', 'TECHNICIAN_MANAGE',
       'SALES_VIEW', 'SALES_CREATE', 'SALES_UPDATE', 'SALES_TEAM_VIEW', 'SALES_TEAM_MANAGE',
@@ -1352,7 +1377,7 @@ class MemoryStore {
       'DASHBOARD_VIEW',
       'USER_VIEW',
       'CUSTOMER_VIEW', 'CUSTOMER_CREATE', 'CUSTOMER_UPDATE', 'CUSTOMER_EDIT',
-      'LEAD_VIEW', 'LEAD_CREATE', 'LEAD_EDIT', 'LEAD_FOLLOWUP_CREATE', 'LEAD_FOLLOWUP_COMPLETE', 'LEAD_CONVERT', 'LEAD_WON', 'LEAD_LOST',
+      'LEAD_VIEW', 'LEAD_CREATE', 'LEAD_EDIT', 'LEAD_ASSIGN', 'LEAD_FOLLOWUP_CREATE', 'LEAD_FOLLOWUP_COMPLETE', 'LEAD_CONVERT', 'LEAD_WON', 'LEAD_LOST', 'LEAD_MARK_WON', 'LEAD_MARK_LOST',
       'BOOKING_VIEW', 'BOOKING_CREATE', 'BOOKING_UPDATE', 'BOOKING_EDIT',
       'PAYMENT_VIEW', 'PAYMENT_COLLECT',
       'SALES_VIEW', 'SALES_TEAM_VIEW',
@@ -1368,6 +1393,7 @@ class MemoryStore {
     const FINANCE_PERMISSIONS = [
       'DASHBOARD_VIEW',
       'FINANCE_VIEW',
+      'LEAD_VIEW', 'LEAD_CREATE',
       'PAYMENT_VIEW', 'PAYMENT_CREATE', 'PAYMENT_COLLECT', 'PAYMENT_VERIFY', 'PAYMENT_RECONCILE', 'PAYMENT_REFUND_REQUEST', 'PAYMENT_REFUND_APPROVE', 'PAYMENT_EDIT', 'PAYMENT_MANAGE', 'PAYMENT_REFUND',
       'INVOICE_VIEW', 'INVOICE_CREATE', 'INVOICE_EDIT', 'INVOICE_VOID', 'INVOICE_MANAGE',
       'COMMISSION_VIEW', 'COMMISSION_UPDATE', 'COMMISSION_MANAGE',
@@ -1382,7 +1408,7 @@ class MemoryStore {
     const MARKETING_PERMISSIONS = [
       'DASHBOARD_VIEW',
       'PROMOTION_VIEW', 'PROMOTION_CREATE', 'PROMOTION_EDIT', 'PROMOTION_DELETE', 'PROMOTION_ACTIVATE',
-      'LEAD_VIEW', 'LEAD_CREATE',
+      'LEAD_VIEW', 'LEAD_CREATE', 'LEAD_EDIT',
       'CUSTOMER_VIEW', 'REPORT_VIEW', 'SERVICE_VIEW',
     ];
     for (const code of MARKETING_PERMISSIONS) {
@@ -1392,6 +1418,7 @@ class MemoryStore {
     // 7. OPERATIONS: Fleet Scheduling, Service Dispatch, Locations
     const OPERATIONS_PERMISSIONS = [
       'DASHBOARD_VIEW',
+      'LEAD_VIEW',
       'BOOKING_VIEW', 'BOOKING_CREATE', 'BOOKING_UPDATE', 'BOOKING_EDIT', 'BOOKING_ASSIGN', 'BOOKING_CANCEL',
       'TECHNICIAN_VIEW', 'TECHNICIAN_ASSIGN', 'TECHNICIAN_UPDATE', 'TECHNICIAN_MANAGE',
       'CUSTOMER_VIEW', 'LOCATION_VIEW', 'LOCATION_MANAGE',
@@ -1405,6 +1432,7 @@ class MemoryStore {
     // 8. SUPPORT: Helpdesk, Customer Service, Dispute Handling
     const SUPPORT_PERMISSIONS = [
       'DASHBOARD_VIEW',
+      'LEAD_VIEW',
       'SUPPORT_VIEW', 'SUPPORT_RESOLVE', 'SUPPORT_MANAGE',
       'CUSTOMER_VIEW', 'CUSTOMER_UPDATE', 'CUSTOMER_EDIT',
       'BOOKING_VIEW', 'REVIEW_VIEW',
@@ -1721,6 +1749,15 @@ class MemoryStore {
       const perms = this.rolePermissions
         .filter((rp) => rp.role_code === roleCode)
         .map((rp) => ({ permission_code: rp.permission_code }));
+      return { rows: perms as any, rowCount: perms.length };
+    }
+
+    // 11b. Custom user permissions lookup
+    if (/FROM user_permissions WHERE user_id = \$1/i.test(cleanSql)) {
+      const userId = String(params[0]);
+      const perms = (this.userPermissions || [])
+        .filter((up) => up.user_id === userId)
+        .map((up) => ({ permission_code: up.permission_code }));
       return { rows: perms as any, rowCount: perms.length };
     }
 

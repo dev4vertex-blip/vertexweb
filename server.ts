@@ -123,6 +123,23 @@ async function startServer() {
   app.use('/api/v1/payroll', payrollRouter);
   app.use('/api/v1', metadataRouter);
 
+  // Stale CRM / Lead routes canonical redirection to /crm/leads
+  const staleLeadRoutes = [
+    '/admin/crm',
+    '/admin/leads',
+    '/crm',
+    '/crm/',
+    '/crm-lead',
+    '/crm/lead',
+    '/crm-leads',
+    '/admin/crm-leads',
+    '/admin/crm/leads',
+    '/leads',
+  ];
+  app.get(staleLeadRoutes, (req, res) => {
+    res.redirect(301, '/crm/leads');
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

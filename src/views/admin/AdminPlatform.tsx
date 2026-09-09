@@ -8,6 +8,7 @@ import { AdminBookingsView } from './AdminBookingsView';
 import { AdminCustomersView } from './AdminCustomersView';
 import { AdminTechniciansView } from './AdminTechniciansView';
 import { UserManagementView } from './users/UserManagementView';
+import { AdminLeadsView } from './leads/AdminLeadsView';
 import { AdminGenericSectionView } from './AdminGenericSectionView';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -49,8 +50,16 @@ interface SidebarItem {
   route: string;
   label: string;
   icon: React.ReactNode;
-  category: 'core' | 'operations' | 'finance' | 'system';
+  category: 'core' | 'crm' | 'operations' | 'finance' | 'system';
 }
+
+const CATEGORY_METADATA: { key: 'core' | 'crm' | 'operations' | 'finance' | 'system'; label: string }[] = [
+  { key: 'core', label: 'Core Platform' },
+  { key: 'crm', label: 'CRM' },
+  { key: 'operations', label: 'Team & Operations' },
+  { key: 'finance', label: 'Finance & AMC' },
+  { key: 'system', label: 'System & Support' },
+];
 
 const ALL_SIDEBAR_ITEMS: SidebarItem[] = [
   // Core
@@ -90,14 +99,16 @@ const ALL_SIDEBAR_ITEMS: SidebarItem[] = [
     category: 'core',
   },
 
-  // Team & Operations
+  // CRM
   {
-    id: 'crm',
-    route: '/admin/crm',
-    label: 'Sales CRM & Leads',
+    id: 'leads',
+    route: '/crm/leads',
+    label: 'Leads',
     icon: <TrendingUp className="w-4 h-4" />,
-    category: 'operations',
+    category: 'crm',
   },
+
+  // Team & Operations
   {
     id: 'promotions',
     route: '/admin/promotions',
@@ -259,6 +270,26 @@ export const AdminPlatform: React.FC = () => {
   const getInitialSection = (): string => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname.toLowerCase();
+      // Redirection: Redirect old lead/crm routes to canonical '/crm/leads'
+      if (
+        path === '/admin/crm' ||
+        path === '/admin/leads' ||
+        path === '/crm' ||
+        path === '/crm/' ||
+        path === '/admin/crm-leads' ||
+        path === '/admin/crm/leads' ||
+        path === '/crm/lead' ||
+        path === '/crm-lead' ||
+        path === '/crm/leads' ||
+        path === '/crm/leads/' ||
+        path === '/leads'
+      ) {
+        if (path !== '/crm/leads') {
+          window.history.replaceState(null, '', '/crm/leads');
+        }
+        return 'leads';
+      }
+
       const match = ALL_SIDEBAR_ITEMS.find((item) => item.route.toLowerCase() === path);
       if (match) return match.id;
       if (path.startsWith('/admin/')) {
@@ -273,19 +304,59 @@ export const AdminPlatform: React.FC = () => {
   const [activeSection, setActiveSection] = useState<string>(getInitialSection);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // Sync with browser back/forward buttons
+  // Sync with browser back/forward buttons and enforce redirects
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname.toLowerCase();
+      if (
+        path === '/admin/crm' ||
+        path === '/admin/leads' ||
+        path === '/crm' ||
+        path === '/crm/' ||
+        path === '/admin/crm-leads' ||
+        path === '/admin/crm/leads' ||
+        path === '/crm/lead' ||
+        path === '/crm-lead' ||
+        path === '/crm/leads' ||
+        path === '/crm/leads/' ||
+        path === '/leads'
+      ) {
+        if (path !== '/crm/leads') {
+          window.history.replaceState(null, '', '/crm/leads');
+        }
+        setActiveSection('leads');
+        return;
+      }
+
       const match = ALL_SIDEBAR_ITEMS.find((item) => item.route.toLowerCase() === path);
       if (match) {
         setActiveSection(match.id);
-      } else if (path === '/admin' || path === '/admin/') {
+      } else if (path === '/admin' || path === '/admin/' || path === '/') {
         setActiveSection('dashboard');
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Ensure any initial load on old routes redirects cleanly to /crm/leads
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase();
+      if (
+        path === '/admin/crm' ||
+        path === '/admin/leads' ||
+        path === '/crm' ||
+        path === '/crm/' ||
+        path === '/admin/crm-leads' ||
+        path === '/admin/crm/leads' ||
+        path === '/crm/lead' ||
+        path === '/crm-lead' ||
+        path === '/leads'
+      ) {
+        window.history.replaceState(null, '', '/crm/leads');
+      }
+    }
   }, []);
 
   // Sync active section with window route or default
@@ -436,23 +507,37 @@ export const AdminPlatform: React.FC = () => {
               </Badge>
             </div>
 
-            {visibleItems.map((item) => {
-              const isActive = activeSection === item.id;
+            {CATEGORY_METADATA.map((cat) => {
+              const catItems = visibleItems.filter((item) => item.category === cat.key);
+              if (catItems.length === 0) return null;
+
               return (
-                <button
-                  key={item.id}
-                  onClick={() => navigateToSection(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer text-left ${
-                    isActive
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <span className={isActive ? 'text-white' : 'text-slate-500'}>
-                    {item.icon}
-                  </span>
-                  <span>{item.label}</span>
-                </button>
+                <div key={cat.key} className="pt-2 first:pt-0">
+                  <div className="px-3 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {cat.label}
+                  </div>
+                  <div className="space-y-0.5">
+                    {catItems.map((item) => {
+                      const isActive = activeSection === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => navigateToSection(item.id)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer text-left ${
+                            isActive
+                              ? 'bg-slate-900 text-white shadow-xs'
+                              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                          }`}
+                        >
+                          <span className={isActive ? 'text-white' : 'text-slate-500'}>
+                            {item.icon}
+                          </span>
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
 
@@ -499,11 +584,15 @@ export const AdminPlatform: React.FC = () => {
 
                 {activeSection === 'technicians' && <AdminTechniciansView />}
 
+                {(activeSection === 'crm' || activeSection === 'leads') && <AdminLeadsView />}
+
                 {activeSection !== 'dashboard' &&
                   activeSection !== 'users' &&
                   activeSection !== 'bookings' &&
                   activeSection !== 'customers' &&
-                  activeSection !== 'technicians' && (
+                  activeSection !== 'technicians' &&
+                  activeSection !== 'crm' &&
+                  activeSection !== 'leads' && (
                     <AdminGenericSectionView
                       sectionKey={activeSection}
                       title={getSectionTitle(activeSection)}

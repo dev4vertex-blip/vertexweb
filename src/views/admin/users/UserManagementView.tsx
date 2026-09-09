@@ -252,11 +252,18 @@ export const UserManagementView: React.FC = () => {
             >
               <option value="ALL">All Roles</option>
               <option value="SUPER_ADMIN">Super Admin</option>
+              <option value="ADMIN">System Admin</option>
               <option value="MANAGER">Operations Manager</option>
               <option value="SALES">Sales Specialist</option>
+              <option value="SALES_TEAM">Sales Executive</option>
               <option value="FINANCE">Finance Officer</option>
+              <option value="MARKETING">Marketing Manager</option>
+              <option value="OPERATIONS">Operations Executive</option>
+              <option value="SUPPORT">Customer Support</option>
+              <option value="HR">Human Resources</option>
               <option value="TECHNICIAN">Field Technician</option>
               <option value="CUSTOMER">Customer / Client</option>
+              <option value="PARTNER">Service Partner</option>
             </select>
           </div>
 

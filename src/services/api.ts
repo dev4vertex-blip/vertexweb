@@ -1,4 +1,13 @@
-import { AuthUser, LoginCredentials, OtpCredentials, UserListItem, CityItem, RoleItem } from '../types/auth';
+import {
+  AuthUser,
+  LoginCredentials,
+  OtpCredentials,
+  UserListItem,
+  CityItem,
+  RoleItem,
+  DepartmentItem,
+  DesignationItem,
+} from '../types/auth';
 import { secureStorage } from './storage';
 
 /**
@@ -203,6 +212,16 @@ class ApiService {
     return res.data;
   }
 
+  async getDepartments(): Promise<DepartmentItem[]> {
+    const res = await this.request<{ success: boolean; data: DepartmentItem[] }>('/api/v1/departments');
+    return res.data;
+  }
+
+  async getDesignations(): Promise<DesignationItem[]> {
+    const res = await this.request<{ success: boolean; data: DesignationItem[] }>('/api/v1/designations');
+    return res.data;
+  }
+
   async getAuditLogs(params: { limit?: number; action?: string } = {}): Promise<any[]> {
     const query = new URLSearchParams();
     if (params.limit) query.set('limit', String(params.limit));
@@ -303,8 +322,28 @@ class ApiService {
     return res.data || [];
   }
 
+  async createServiceCategory(data: any): Promise<any> {
+    return this.request('/api/v1/services/categories', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateServiceCategory(id: number | string, data: any): Promise<any> {
+    return this.request(`/api/v1/services/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteServiceCategory(id: number | string): Promise<any> {
+    return this.request(`/api/v1/services/categories/${id}`, { method: 'DELETE' });
+  }
+
   async createService(data: any): Promise<any> {
     return this.request('/api/v1/services', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async updateService(id: string, data: any): Promise<any> {
+    return this.request(`/api/v1/services/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+
+  async deleteService(id: string): Promise<any> {
+    return this.request(`/api/v1/services/${id}`, { method: 'DELETE' });
   }
 
   async updateServicePrice(id: string, basePrice: number, strikePrice?: number): Promise<any> {
@@ -422,6 +461,86 @@ class ApiService {
     const query = runId ? `?payroll_run_id=${runId}` : '';
     const res = await this.request<{ success: boolean; data: any[] }>(`/api/v1/payroll/payslips${query}`);
     return res.data || [];
+  }
+
+  // --- CRM & Leads Management ---
+  async getLeads(params?: {
+    status?: string;
+    priority?: string;
+    assigned_to_user_id?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.priority) query.set('priority', params.priority);
+    if (params?.assigned_to_user_id) query.set('assigned_to_user_id', params.assigned_to_user_id);
+    if (params?.search) query.set('search', params.search);
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.offset) query.set('offset', String(params.offset));
+
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await this.request<{ success: boolean; data: any[] }>(`/api/v1/leads${qs}`);
+    return res.data || [];
+  }
+
+  async getLeadById(id: string): Promise<any> {
+    const res = await this.request<{ success: boolean; data: any }>(`/api/v1/leads/${id}`);
+    return res.data;
+  }
+
+  async createLead(data: any): Promise<any> {
+    return this.request<{ success: boolean; message: string; data: any }>('/api/v1/leads', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLead(id: string, data: any): Promise<any> {
+    return this.request<{ success: boolean; message: string; data: any }>(`/api/v1/leads/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLeadStatus(id: string, status: string, won_lost_reason?: string): Promise<any> {
+    return this.request<{ success: boolean; message: string; data: any }>(`/api/v1/leads/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, won_lost_reason }),
+    });
+  }
+
+  async assignLead(id: string, assigned_to_user_id: string): Promise<any> {
+    return this.request<{ success: boolean; message: string; data: any }>(`/api/v1/leads/${id}/assign`, {
+      method: 'PATCH',
+      body: JSON.stringify({ assigned_to_user_id }),
+    });
+  }
+
+  async getLeadFollowups(leadId: string): Promise<any[]> {
+    const res = await this.request<{ success: boolean; data: any[] }>(`/api/v1/leads/${leadId}/followups`);
+    return res.data || [];
+  }
+
+  async addLeadFollowup(leadId: string, data: any): Promise<any> {
+    return this.request<{ success: boolean; message: string; data: any }>(`/api/v1/leads/${leadId}/followups`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async convertLeadToBooking(leadId: string, data?: any): Promise<any> {
+    return this.request<{ success: boolean; message: string; data: any }>(`/api/v1/leads/${leadId}/convert`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async deleteLead(id: string): Promise<any> {
+    return this.request<{ success: boolean; message: string }>(`/api/v1/leads/${id}`, {
+      method: 'DELETE',
+    });
   }
 }
 

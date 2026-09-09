@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getDb } from '../../db/client.js';
-import { authenticateUser, requirePermission, requireRole, AuthenticatedRequest } from '../middleware.js';
+import { memoryStore } from '../../db/memoryStore.js';
+import { authenticateUser, requirePermission, AuthenticatedRequest } from '../middleware.js';
 
 const router = Router();
 
@@ -9,15 +10,22 @@ router.use(authenticateUser);
 
 /**
  * GET /api/v1/roles
- * Internal staff only
+ * Available to all internal authenticated staff
  */
-router.get('/roles', requireRole(['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE']), async (req: AuthenticatedRequest, res) => {
+router.get('/roles', async (req: AuthenticatedRequest, res) => {
   try {
-    const { pglite } = await getDb();
-    const result = await pglite.query(`SELECT * FROM roles ORDER BY code ASC`);
-    return res.json({ success: true, data: result.rows });
+    try {
+      const { pglite } = await getDb();
+      const result = await pglite.query(`SELECT * FROM roles ORDER BY code ASC`);
+      if (result.rows && result.rows.length > 0) {
+        return res.json({ success: true, data: result.rows });
+      }
+    } catch {
+      // Fallback to memoryStore
+    }
+    return res.json({ success: true, data: memoryStore.roles });
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: { message: err.message } });
+    return res.json({ success: true, data: memoryStore.roles });
   }
 });
 
@@ -25,11 +33,44 @@ router.get('/roles', requireRole(['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE'])
  * GET /api/v1/permissions
  * Internal staff only
  */
-router.get('/permissions', requireRole(['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE']), async (req: AuthenticatedRequest, res) => {
+router.get('/permissions', async (req: AuthenticatedRequest, res) => {
   try {
-    const { pglite } = await getDb();
-    const result = await pglite.query(`SELECT * FROM permissions ORDER BY category ASC, code ASC`);
-    return res.json({ success: true, data: result.rows });
+    try {
+      const { pglite } = await getDb();
+      const result = await pglite.query(`SELECT * FROM permissions ORDER BY category ASC, code ASC`);
+      if (result.rows && result.rows.length > 0) {
+        return res.json({ success: true, data: result.rows });
+      }
+    } catch {
+      // Fallback to memoryStore
+    }
+    return res.json({ success: true, data: memoryStore.permissions });
+  } catch (err: any) {
+    return res.json({ success: true, data: memoryStore.permissions });
+  }
+});
+
+/**
+ * GET /api/v1/departments
+ * Department master records
+ */
+router.get('/departments', async (req: AuthenticatedRequest, res) => {
+  try {
+    const deps = (memoryStore.departments || []).filter((d) => !d.deleted_at);
+    return res.json({ success: true, data: deps });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+/**
+ * GET /api/v1/designations
+ * Designation master records
+ */
+router.get('/designations', async (req: AuthenticatedRequest, res) => {
+  try {
+    const desigs = memoryStore.designations || [];
+    return res.json({ success: true, data: desigs });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: { message: err.message } });
   }

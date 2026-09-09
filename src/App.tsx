@@ -22,7 +22,7 @@ const AppContent: React.FC = () => {
     }
     if (typeof window !== 'undefined') {
       const pathname = window.location.pathname.toLowerCase();
-      if (pathname.startsWith('/admin')) return 'admin';
+      if (pathname.startsWith('/admin') || pathname.startsWith('/crm')) return 'admin';
       if (pathname.startsWith('/customer')) return 'customer';
       if (pathname.startsWith('/technician') || pathname.startsWith('/partner')) return 'technician';
     }

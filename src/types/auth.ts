@@ -44,16 +44,23 @@ export type PermissionKey =
   | 'CUSTOMER_DELETE'
   | 'CUSTOMER_MANAGE'
   | 'LEAD_VIEW'
+  | 'LEAD_VIEW_OWN'
+  | 'LEAD_VIEW_TEAM'
+  | 'LEAD_VIEW_ALL'
   | 'LEAD_CREATE'
   | 'LEAD_EDIT'
+  | 'LEAD_UPDATE'
   | 'LEAD_DELETE'
   | 'LEAD_ASSIGN'
   | 'LEAD_REASSIGN'
   | 'LEAD_FOLLOWUP_CREATE'
+  | 'LEAD_FOLLOWUP_EDIT'
   | 'LEAD_FOLLOWUP_COMPLETE'
   | 'LEAD_CONVERT'
   | 'LEAD_WON'
   | 'LEAD_LOST'
+  | 'LEAD_MARK_WON'
+  | 'LEAD_MARK_LOST'
   | 'TECHNICIAN_VIEW'
   | 'TECHNICIAN_CREATE'
   | 'TECHNICIAN_UPDATE'
@@ -227,10 +234,17 @@ export type ActionKey =
   | 'CUSTOMER_CREATE'
   | 'CUSTOMER_EDIT'
   | 'CUSTOMER_DELETE'
+  | 'LEAD_VIEW'
   | 'LEAD_CREATE'
   | 'LEAD_EDIT'
   | 'LEAD_DELETE'
+  | 'LEAD_ASSIGN'
+  | 'LEAD_REASSIGN'
+  | 'LEAD_FOLLOWUP_CREATE'
+  | 'LEAD_FOLLOWUP_COMPLETE'
   | 'LEAD_CONVERT'
+  | 'LEAD_WON'
+  | 'LEAD_LOST'
   | 'PAYMENT_COLLECT'
   | 'PAYMENT_VERIFY'
   | 'PAYMENT_REFUND'
@@ -238,7 +252,15 @@ export type ActionKey =
   | 'PAYMENT_VIEW'
   | 'SALES_TEAM_MANAGE'
   | 'SETTINGS_UPDATE'
-  | 'SYSTEM_INTEGRATION';
+  | 'SYSTEM_INTEGRATION'
+  | 'SERVICE_CREATE'
+  | 'SERVICE_EDIT'
+  | 'SERVICE_DELETE'
+  | 'SERVICE_ACTIVATE'
+  | 'SERVICE_DEACTIVATE'
+  | 'SERVICE_PRICE_EDIT'
+  | 'SERVICE_CATEGORY_MANAGE'
+  | 'CATEGORY_MANAGE';
 
 export interface AuthUser {
   id: string;
@@ -346,3 +368,107 @@ export interface AuditLogEntry {
   ip_address?: string;
   status?: 'SUCCESS' | 'FAILURE' | 'WARNING';
 }
+
+export type LeadStatus =
+  | 'NEW'
+  | 'CONTACTED'
+  | 'IN_PROGRESS'
+  | 'QUALIFIED'
+  | 'PROPOSAL_SENT'
+  | 'WON'
+  | 'LOST';
+
+export type LeadPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+
+export interface LeadItem {
+  id: string;
+  lead_number: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  city_id?: number | string;
+  city_name?: string;
+  service_category?: string;
+  service_requirement?: string;
+  source: string;
+  priority: LeadPriority;
+  status: LeadStatus;
+  estimated_value: number;
+  assigned_to_user_id?: string;
+  assigned_to_name?: string;
+  created_by_user_id?: string;
+  created_by_name?: string;
+  won_lost_reason?: string;
+  notes?: string;
+  converted_booking_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadFollowupItem {
+  id: string;
+  lead_id: string;
+  type: 'CALL' | 'MEETING' | 'EMAIL' | 'NOTES';
+  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+  notes: string;
+  followup_date: string;
+  next_followup_date?: string;
+  created_by_user_id?: string;
+  created_by_name?: string;
+  created_at: string;
+}
+
+export interface CreateLeadPayload {
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  city_id?: number | string;
+  service_category?: string;
+  service_requirement?: string;
+  source?: string;
+  priority?: LeadPriority;
+  estimated_value?: number;
+  assigned_to_user_id?: string;
+  notes?: string;
+}
+
+export interface UpdateLeadPayload {
+  customer_name?: string;
+  customer_phone?: string;
+  customer_email?: string;
+  city_id?: number | string;
+  service_category?: string;
+  service_requirement?: string;
+  source?: string;
+  priority?: LeadPriority;
+  status?: LeadStatus;
+  estimated_value?: number;
+  assigned_to_user_id?: string;
+  notes?: string;
+  won_lost_reason?: string;
+}
+
+export interface AddFollowupPayload {
+  type?: 'CALL' | 'MEETING' | 'EMAIL' | 'NOTES';
+  status?: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+  notes: string;
+  followup_date?: string;
+  next_followup_date?: string;
+}
+
+export interface DepartmentItem {
+  id: string;
+  name: string;
+  code: string;
+  manager_id?: string;
+  manager_name?: string;
+}
+
+export interface DesignationItem {
+  id: string;
+  title: string;
+  department_id: string;
+  department_name?: string;
+  level?: string;
+}
+

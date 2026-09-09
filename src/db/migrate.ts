@@ -140,12 +140,76 @@ export async function runMigrations() {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS user_permissions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      permission_code TEXT NOT NULL REFERENCES permissions(code) ON DELETE CASCADE,
+      granted_by TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      CONSTRAINT unique_user_permission UNIQUE (user_id, permission_code)
+    );
+
+    CREATE TABLE IF NOT EXISTS leads (
+      id TEXT PRIMARY KEY,
+      public_id TEXT NOT NULL UNIQUE,
+      customer_name TEXT NOT NULL,
+      company_name TEXT,
+      phone TEXT NOT NULL,
+      alternate_phone TEXT,
+      email TEXT,
+      address TEXT,
+      service_interest TEXT NOT NULL,
+      service_category TEXT,
+      requirement_details TEXT,
+      estimated_value NUMERIC DEFAULT 0 NOT NULL,
+      lead_source TEXT NOT NULL,
+      priority TEXT DEFAULT 'MEDIUM' NOT NULL,
+      stage TEXT DEFAULT 'NEW' NOT NULL,
+      status TEXT DEFAULT 'ACTIVE' NOT NULL,
+      loss_reason TEXT,
+      won_booking_id TEXT,
+      won_customer_id TEXT,
+      assigned_to TEXT REFERENCES users(id),
+      created_by TEXT REFERENCES users(id),
+      city_id INTEGER REFERENCES cities(id),
+      expected_followup_date DATE,
+      expected_followup_time TEXT,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+      deleted_at TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS lead_followups (
+      id TEXT PRIMARY KEY,
+      lead_id TEXT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+      scheduled_date DATE NOT NULL,
+      scheduled_time TEXT,
+      followup_type TEXT DEFAULT 'CALL',
+      notes TEXT NOT NULL,
+      outcome TEXT,
+      status TEXT DEFAULT 'OPEN' NOT NULL,
+      completed BOOLEAN DEFAULT FALSE NOT NULL,
+      completed_at TIMESTAMP,
+      completed_by TEXT REFERENCES users(id),
+      cancellation_reason TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
     CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
     CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+    CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage);
+    CREATE INDEX IF NOT EXISTS idx_leads_assigned_to ON leads(assigned_to);
+    CREATE INDEX IF NOT EXISTS idx_leads_created_by ON leads(created_by);
+    CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone);
+    CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
+    CREATE INDEX IF NOT EXISTS idx_lead_followups_lead_id ON lead_followups(lead_id);
+    CREATE INDEX IF NOT EXISTS idx_lead_followups_scheduled ON lead_followups(scheduled_date, status);
   `;
 
   await client.exec(migrationSQL);

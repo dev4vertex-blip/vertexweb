@@ -191,8 +191,8 @@ router.post('/', requirePermission('USER_CREATE'), async (req: AuthenticatedRequ
     }
 
     // 2. Strict Role Restrictions:
-    // Manager can ONLY create SALES team members!
-    if (currentUser.role === 'MANAGER' && body.role !== 'SALES') {
+    // Manager can ONLY create SALES / SALES_TEAM team members!
+    if (currentUser.role === 'MANAGER' && !['SALES', 'SALES_TEAM'].includes(body.role)) {
       return res.status(403).json({
         success: false,
         error: {
@@ -202,8 +202,22 @@ router.post('/', requirePermission('USER_CREATE'), async (req: AuthenticatedRequ
       });
     }
 
-    // Non-Super Admin cannot create SUPER_ADMIN, MANAGER, or FINANCE users
-    if (currentUser.role !== 'SUPER_ADMIN' && ['SUPER_ADMIN', 'MANAGER', 'FINANCE'].includes(body.role)) {
+    // ADMIN cannot create SUPER_ADMIN accounts
+    if (currentUser.role === 'ADMIN' && body.role === 'SUPER_ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED_ROLE_ASSIGNMENT',
+          message: 'Administrators cannot create Super Administrator accounts.',
+        },
+      });
+    }
+
+    // Other non-Super Admins cannot create administrative roles
+    if (
+      !['SUPER_ADMIN', 'ADMIN'].includes(currentUser.role) &&
+      ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'FINANCE'].includes(body.role)
+    ) {
       return res.status(403).json({
         success: false,
         error: {
@@ -339,6 +353,40 @@ router.post('/', requirePermission('USER_CREATE'), async (req: AuthenticatedRequ
       );
     }
 
+    // 7b. Custom User Permissions if provided (e.g. granular overrides)
+    if (Array.isArray(body.permissions)) {
+      for (const pCode of body.permissions) {
+        await pglite.query(
+          `INSERT INTO user_permissions (id, user_id, permission_code, granted_by, created_at)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+           ON CONFLICT (user_id, permission_code) DO NOTHING`,
+          [crypto.randomUUID(), newUserId, pCode, currentUser.id]
+        ).catch(() => {});
+        if (memoryStore.userPermissions) {
+          memoryStore.userPermissions.push({ user_id: newUserId, permission_code: pCode });
+        }
+      }
+    }
+
+    // Sync to memoryStore fallback users
+    memoryStore.users.push({
+      id: newUserId,
+      public_id: publicId,
+      name: body.name.trim(),
+      email: cleanEmail,
+      phone: cleanPhone ? `+91 ${cleanPhone}` : null,
+      password_hash: passwordHash,
+      role: body.role,
+      status: initialStatus,
+      profile_image: body.name.slice(0, 2).toUpperCase(),
+      city_id: cityId || 1,
+      department: body.department || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_login_at: null,
+      deleted_at: null,
+    });
+
     // 8. Write Audit Log
     await logAuditEvent({
       userId: currentUser.id,
@@ -458,6 +506,47 @@ router.put('/:id', requirePermission('USER_UPDATE'), async (req: AuthenticatedRe
           ]
         );
       }
+    }
+
+    // Update custom permissions if provided
+    if (Array.isArray(body.permissions)) {
+      await pglite.query(`DELETE FROM user_permissions WHERE user_id = $1`, [targetUserId]).catch(() => {});
+      if (memoryStore.userPermissions) {
+        memoryStore.userPermissions = memoryStore.userPermissions.filter((up) => up.user_id !== targetUserId);
+      }
+      for (const pCode of body.permissions) {
+        await pglite.query(
+          `INSERT INTO user_permissions (id, user_id, permission_code, granted_by, created_at)
+           VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+           ON CONFLICT (user_id, permission_code) DO NOTHING`,
+          [crypto.randomUUID(), targetUserId, pCode, currentUser.id]
+        ).catch(() => {});
+        if (memoryStore.userPermissions) {
+          memoryStore.userPermissions.push({ user_id: targetUserId, permission_code: pCode });
+        }
+      }
+    }
+
+    // Update status if provided
+    if (body.status && ['ACTIVE', 'INACTIVE', 'PENDING', 'SUSPENDED'].includes(body.status)) {
+      await pglite.query(`UPDATE users SET status = $1 WHERE id = $2`, [body.status, targetUserId]).catch(() => {});
+    }
+
+    // Sync memoryStore user
+    const memUser = memoryStore.users.find((u) => u.id === targetUserId);
+    if (memUser) {
+      memUser.name = updatedName;
+      memUser.email = updatedEmail;
+      memUser.phone = updatedPhone;
+      memUser.city_id = updatedCityId;
+      memUser.role = updatedRole;
+      if (body.status && ['ACTIVE', 'INACTIVE', 'PENDING', 'SUSPENDED'].includes(body.status)) {
+        memUser.status = body.status;
+      }
+      if (body.department !== undefined) {
+        memUser.department = body.department || null;
+      }
+      memUser.updated_at = new Date().toISOString();
     }
 
     // Write audit log

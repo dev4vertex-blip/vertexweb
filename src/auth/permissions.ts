@@ -23,6 +23,9 @@ export const ALL_PERMISSIONS: PermissionKey[] = [
   'CUSTOMER_UPDATE',
   'CUSTOMER_DELETE',
   'LEAD_VIEW',
+  'LEAD_VIEW_OWN',
+  'LEAD_VIEW_TEAM',
+  'LEAD_VIEW_ALL',
   'LEAD_CREATE',
   'LEAD_EDIT',
   'LEAD_UPDATE',
@@ -30,10 +33,13 @@ export const ALL_PERMISSIONS: PermissionKey[] = [
   'LEAD_ASSIGN',
   'LEAD_REASSIGN',
   'LEAD_FOLLOWUP_CREATE',
+  'LEAD_FOLLOWUP_EDIT',
   'LEAD_FOLLOWUP_COMPLETE',
   'LEAD_CONVERT',
   'LEAD_WON',
   'LEAD_LOST',
+  'LEAD_MARK_WON',
+  'LEAD_MARK_LOST',
   'TECHNICIAN_VIEW',
   'TECHNICIAN_MANAGE',
   'SALES_TEAM_VIEW',
@@ -267,6 +273,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     'LEAD_FOLLOWUP_CREATE',
     'LEAD_FOLLOWUP_COMPLETE',
     'LEAD_CONVERT',
+    'LEAD_WON',
+    'LEAD_LOST',
+    'LEAD_MARK_WON',
+    'LEAD_MARK_LOST',
+    'SALES_VIEW',
     'TECHNICIAN_VIEW',
     'TECHNICIAN_MANAGE',
     'SALES_TEAM_VIEW',
@@ -310,6 +321,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     'LEAD_FOLLOWUP_CREATE',
     'LEAD_FOLLOWUP_COMPLETE',
     'LEAD_CONVERT',
+    'LEAD_WON',
+    'LEAD_LOST',
+    'LEAD_MARK_WON',
+    'LEAD_MARK_LOST',
     'PAYMENT_VIEW',
     'PAYMENT_COLLECT',
     'PAYMENT_CREATE',
@@ -337,6 +352,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
     'LEAD_FOLLOWUP_CREATE',
     'LEAD_FOLLOWUP_COMPLETE',
     'LEAD_CONVERT',
+    'LEAD_WON',
+    'LEAD_LOST',
+    'LEAD_MARK_WON',
+    'LEAD_MARK_LOST',
     'PAYMENT_VIEW',
     'PAYMENT_COLLECT',
     'PAYMENT_CREATE',
@@ -351,6 +370,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, PermissionKey[]> = {
   FINANCE: [
     'DASHBOARD_VIEW',
     'FINANCE_VIEW',
+    'LEAD_VIEW',
+    'LEAD_CREATE',
     'PAYMENT_VIEW',
     'PAYMENT_VERIFY',
     'PAYMENT_RECONCILE',
@@ -525,7 +546,15 @@ export const ADMIN_ROUTE_PERMISSIONS: Record<string, PermissionKey[]> = {
   '/admin/customers': ['CUSTOMER_VIEW'],
   '/admin/technicians': ['TECHNICIAN_VIEW'],
   '/admin/sales': ['SALES_TEAM_VIEW'],
-  '/admin/crm': ['SALES_VIEW'],
+  '/crm/leads': ['LEAD_VIEW'],
+  '/crm': ['LEAD_VIEW'],
+  '/crm/lead': ['LEAD_VIEW'],
+  '/crm-lead': ['LEAD_VIEW'],
+  '/admin/crm': ['LEAD_VIEW'],
+  '/admin/leads': ['LEAD_VIEW'],
+  '/admin/crm/leads': ['LEAD_VIEW'],
+  '/admin/crm-leads': ['LEAD_VIEW'],
+  '/admin/followups': ['LEAD_VIEW'],
   '/admin/promotions': ['SERVICE_VIEW'],
   '/admin/managers': ['MANAGERS_VIEW'],
   '/admin/finance': ['FINANCE_VIEW'],
@@ -558,10 +587,17 @@ export const ACTION_PERMISSIONS: Record<ActionKey, PermissionKey> = {
   CUSTOMER_CREATE: 'CUSTOMER_CREATE',
   CUSTOMER_EDIT: 'CUSTOMER_EDIT',
   CUSTOMER_DELETE: 'CUSTOMER_DELETE',
+  LEAD_VIEW: 'LEAD_VIEW',
   LEAD_CREATE: 'LEAD_CREATE',
   LEAD_EDIT: 'LEAD_EDIT',
   LEAD_DELETE: 'LEAD_DELETE',
+  LEAD_ASSIGN: 'LEAD_ASSIGN',
+  LEAD_REASSIGN: 'LEAD_REASSIGN',
+  LEAD_FOLLOWUP_CREATE: 'LEAD_FOLLOWUP_CREATE',
+  LEAD_FOLLOWUP_COMPLETE: 'LEAD_FOLLOWUP_COMPLETE',
   LEAD_CONVERT: 'LEAD_CONVERT',
+  LEAD_WON: 'LEAD_WON',
+  LEAD_LOST: 'LEAD_LOST',
   PAYMENT_COLLECT: 'PAYMENT_COLLECT',
   PAYMENT_VERIFY: 'PAYMENT_VERIFY',
   PAYMENT_VIEW: 'PAYMENT_VIEW',
@@ -570,6 +606,14 @@ export const ACTION_PERMISSIONS: Record<ActionKey, PermissionKey> = {
   SALES_TEAM_MANAGE: 'SALES_TEAM_MANAGE',
   SETTINGS_UPDATE: 'SETTINGS_UPDATE',
   SYSTEM_INTEGRATION: 'INTEGRATION_MANAGE',
+  SERVICE_CREATE: 'SERVICE_CREATE',
+  SERVICE_EDIT: 'SERVICE_EDIT',
+  SERVICE_DELETE: 'SERVICE_DELETE',
+  SERVICE_ACTIVATE: 'SERVICE_ACTIVATE',
+  SERVICE_DEACTIVATE: 'SERVICE_DEACTIVATE',
+  SERVICE_PRICE_EDIT: 'SERVICE_PRICE_EDIT',
+  SERVICE_CATEGORY_MANAGE: 'SERVICE_CATEGORY_MANAGE',
+  CATEGORY_MANAGE: 'CATEGORY_MANAGE',
 };
 
 /**
@@ -583,13 +627,38 @@ export function hasRole(user: AuthUser | null, role: UserRole | UserRole[]): boo
   return user.role === role;
 }
 
+const CLIENT_PERMISSION_ALIASES: Partial<Record<PermissionKey, PermissionKey[]>> = {
+  USER_UPDATE: ['USER_EDIT'],
+  USER_EDIT: ['USER_UPDATE'],
+  CUSTOMER_UPDATE: ['CUSTOMER_EDIT', 'CUSTOMER_MANAGE'],
+  CUSTOMER_EDIT: ['CUSTOMER_UPDATE', 'CUSTOMER_MANAGE'],
+  CUSTOMER_MANAGE: ['CUSTOMER_UPDATE', 'CUSTOMER_EDIT'],
+  SERVICE_VIEW: ['SERVICE_MANAGE'],
+  SERVICE_UPDATE: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  SERVICE_EDIT: ['SERVICE_UPDATE', 'SERVICE_MANAGE'],
+  SERVICE_CREATE: ['SERVICE_MANAGE'],
+  SERVICE_DELETE: ['SERVICE_MANAGE'],
+  SERVICE_ACTIVATE: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  SERVICE_DEACTIVATE: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  SERVICE_PRICE_EDIT: ['SERVICE_EDIT', 'SERVICE_MANAGE'],
+  SERVICE_CATEGORY_MANAGE: ['CATEGORY_MANAGE', 'SERVICE_MANAGE'],
+  CATEGORY_MANAGE: ['SERVICE_CATEGORY_MANAGE', 'SERVICE_MANAGE'],
+  CATEGORY_VIEW: ['SERVICE_VIEW', 'SERVICE_MANAGE'],
+};
+
 /**
  * Check if user has a specific permission
  */
 export function hasPermission(user: AuthUser | null, permission: PermissionKey): boolean {
   if (!user) return false;
   if (user.role === 'SUPER_ADMIN') return true;
-  return user.permissions.includes(permission);
+  if (!user.permissions || !Array.isArray(user.permissions)) return false;
+  if (user.permissions.includes(permission)) return true;
+  const aliases = CLIENT_PERMISSION_ALIASES[permission];
+  if (aliases && aliases.some((alias) => user.permissions.includes(alias))) {
+    return true;
+  }
+  return false;
 }
 
 /**

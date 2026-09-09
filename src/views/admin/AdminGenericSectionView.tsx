@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { auditService } from '../../auth/audit';
 import { api } from '../../services/api';
+import { AdminLeadsView } from './leads/AdminLeadsView';
 import {
   Search,
   Plus,
@@ -29,6 +30,10 @@ import {
   History,
   Lock,
   Edit2,
+  Trash2,
+  Power,
+  Tag,
+  Wrench,
   Settings as SettingsIcon,
 } from 'lucide-react';
 
@@ -97,18 +102,56 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   title,
   subtitle,
 }) => {
-  const { user, canPerformAction } = useAuth();
+  const { user, hasPermission, canPerformAction } = useAuth();
   const { addToast } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Service Master RBAC Permissions (Super Admin has unconditional access)
+  const canCreateService = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_CREATE') || hasPermission('SERVICE_MANAGE');
+  const canEditService = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_EDIT') || hasPermission('SERVICE_UPDATE') || hasPermission('SERVICE_MANAGE');
+  const canDeleteService = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_DELETE') || hasPermission('SERVICE_MANAGE');
+  const canToggleServiceStatus = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_ACTIVATE') || hasPermission('SERVICE_DEACTIVATE') || hasPermission('SERVICE_EDIT') || hasPermission('SERVICE_MANAGE');
+  const canEditServicePrice = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_PRICE_EDIT') || hasPermission('SERVICE_EDIT') || hasPermission('SERVICE_MANAGE');
+
+  // Category Master RBAC Permissions (Super Admin has unconditional access)
+  const canManageCategories = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_CATEGORY_MANAGE') || hasPermission('CATEGORY_MANAGE') || hasPermission('SERVICE_MANAGE');
+
   // Live data fetched from RBAC endpoints
   const [liveServices, setLiveServices] = useState<any[]>([]);
+  const [liveCategories, setLiveCategories] = useState<any[]>([]);
   const [liveAmcPlans, setLiveAmcPlans] = useState<any[]>([]);
   const [livePartners, setLivePartners] = useState<any[]>([]);
   const [liveCommissions, setLiveCommissions] = useState<any[]>([]);
   const [liveEmployees, setLiveEmployees] = useState<any[]>([]);
   const [livePayrollRuns, setLivePayrollRuns] = useState<any[]>([]);
   const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
+
+  // Service modal & form state
+  const [isCreateServiceModalOpen, setIsCreateServiceModalOpen] = useState(false);
+  const [isEditServiceModalOpen, setIsEditServiceModalOpen] = useState(false);
+  const [selectedService, setSelectedService] = useState<any | null>(null);
+  const [serviceForm, setServiceForm] = useState({
+    name: '',
+    category_id: 1,
+    category_name: 'AC Service & Repair',
+    base_price: 499,
+    strike_price: 699,
+    duration_minutes: 45,
+    warranty_days: 30,
+    description: '',
+  });
+
+  // Category modal & form state
+  const [isCreateCategoryModalOpen, setIsCreateCategoryModalOpen] = useState(false);
+  const [isEditCategoryModalOpen, setIsEditCategoryModalOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    code: '',
+    icon: '🛠️',
+    description: '',
+    active: true,
+  });
 
   useEffect(() => {
     let isCurrent = true;
@@ -117,8 +160,17 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
     const fetchData = async () => {
       try {
         if (sectionKey === 'services' || sectionKey === 'service-catalog') {
-          const res = await api.getServices();
-          if (isCurrent && Array.isArray(res)) setLiveServices(res);
+          const [sRes, cRes] = await Promise.all([
+            api.getServices().catch(() => []),
+            api.getServiceCategories().catch(() => []),
+          ]);
+          if (isCurrent) {
+            if (Array.isArray(sRes)) setLiveServices(sRes);
+            if (Array.isArray(cRes)) setLiveCategories(cRes);
+          }
+        } else if (sectionKey === 'categories') {
+          const cRes = await api.getServiceCategories().catch(() => []);
+          if (isCurrent && Array.isArray(cRes)) setLiveCategories(cRes);
         } else if (sectionKey === 'amc') {
           const res = await api.getAmcPlans();
           if (isCurrent && Array.isArray(res)) setLiveAmcPlans(res);
@@ -150,6 +202,206 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
       isCurrent = false;
     };
   }, [sectionKey]);
+
+  // Service Management Handlers
+  const handleToggleServiceStatus = async (id: string, currentStatusLive: boolean) => {
+    try {
+      const nextActive = !currentStatusLive;
+      await api.toggleServiceActive(id, nextActive);
+      setLiveServices((prev) =>
+        prev.map((srv) => (srv.id === id ? { ...srv, is_active: nextActive, status: nextActive ? 'ACTIVE' : 'INACTIVE' } : srv))
+      );
+      addToast({
+        type: 'success',
+        title: 'Status Updated',
+        message: `Service status changed to ${nextActive ? 'Active' : 'Inactive'}.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Action Failed',
+        message: err.message || 'Failed to update service status',
+      });
+    }
+  };
+
+  const handleDeleteService = async (id: string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete service "${name}"?`)) return;
+    try {
+      await api.deleteService(id);
+      setLiveServices((prev) => prev.filter((s) => s.id !== id));
+      addToast({
+        type: 'success',
+        title: 'Service Deleted',
+        message: `"${name}" removed from catalog.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Deletion Failed',
+        message: err.message || 'Failed to delete service',
+      });
+    }
+  };
+
+  const handleSaveNewService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const created = await api.createService({
+        name: serviceForm.name,
+        category_id: Number(serviceForm.category_id),
+        category_name: serviceForm.category_name,
+        base_price: Number(serviceForm.base_price),
+        strike_price: Number(serviceForm.strike_price),
+        duration_minutes: Number(serviceForm.duration_minutes),
+        warranty_days: Number(serviceForm.warranty_days),
+        description: serviceForm.description,
+        is_active: true,
+      });
+      const newService = created.data || created;
+      setLiveServices((prev) => [newService, ...prev]);
+      setIsCreateServiceModalOpen(false);
+      addToast({
+        type: 'success',
+        title: 'Service Created',
+        message: `"${serviceForm.name}" created successfully.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Creation Failed',
+        message: err.message || 'Failed to create service',
+      });
+    }
+  };
+
+  const handleSaveEditService = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedService) return;
+    try {
+      await api.updateService(selectedService.id, {
+        name: serviceForm.name,
+        category_id: Number(serviceForm.category_id),
+        category_name: serviceForm.category_name,
+        base_price: Number(serviceForm.base_price),
+        strike_price: Number(serviceForm.strike_price),
+        duration_minutes: Number(serviceForm.duration_minutes),
+        warranty_days: Number(serviceForm.warranty_days),
+        description: serviceForm.description,
+      });
+      if (canEditServicePrice) {
+        await api.updateServicePrice(selectedService.id, Number(serviceForm.base_price), Number(serviceForm.strike_price)).catch(() => {});
+      }
+      setLiveServices((prev) =>
+        prev.map((s) =>
+          s.id === selectedService.id
+            ? {
+                ...s,
+                name: serviceForm.name,
+                category_name: serviceForm.category_name,
+                category_id: serviceForm.category_id,
+                base_price: Number(serviceForm.base_price),
+                strike_price: Number(serviceForm.strike_price),
+                duration_minutes: Number(serviceForm.duration_minutes),
+                warranty_days: Number(serviceForm.warranty_days),
+                description: serviceForm.description,
+              }
+            : s
+        )
+      );
+      setIsEditServiceModalOpen(false);
+      addToast({
+        type: 'success',
+        title: 'Service Updated',
+        message: `Changes to "${serviceForm.name}" saved.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Failed to update service',
+      });
+    }
+  };
+
+  // Category Management Handlers
+  const handleSaveNewCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const created = await api.createServiceCategory({
+        name: categoryForm.name,
+        code: categoryForm.code || categoryForm.name.toUpperCase().replace(/\s+/g, '_'),
+        icon: categoryForm.icon,
+        description: categoryForm.description,
+      });
+      const newCat = created.data || created;
+      setLiveCategories((prev) => [...prev, newCat]);
+      setIsCreateCategoryModalOpen(false);
+      addToast({
+        type: 'success',
+        title: 'Category Created',
+        message: `Category "${categoryForm.name}" created successfully.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Creation Failed',
+        message: err.message || 'Failed to create category',
+      });
+    }
+  };
+
+  const handleSaveEditCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCategory) return;
+    try {
+      await api.updateServiceCategory(selectedCategory.id, {
+        name: categoryForm.name,
+        code: categoryForm.code,
+        icon: categoryForm.icon,
+        description: categoryForm.description,
+        active: categoryForm.active,
+      });
+      setLiveCategories((prev) =>
+        prev.map((c) =>
+          c.id === selectedCategory.id
+            ? { ...c, name: categoryForm.name, code: categoryForm.code, icon: categoryForm.icon, description: categoryForm.description, active: categoryForm.active }
+            : c
+        )
+      );
+      setIsEditCategoryModalOpen(false);
+      addToast({
+        type: 'success',
+        title: 'Category Updated',
+        message: `Category "${categoryForm.name}" updated.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Failed to update category',
+      });
+    }
+  };
+
+  const handleDeleteCategory = async (id: number | string, name: string) => {
+    if (!window.confirm(`Are you sure you want to delete category "${name}"?`)) return;
+    try {
+      await api.deleteServiceCategory(id);
+      setLiveCategories((prev) => prev.filter((c) => c.id !== id));
+      addToast({
+        type: 'success',
+        title: 'Category Deleted',
+        message: `"${name}" removed from categories.`,
+      });
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Deletion Failed',
+        message: err.message || 'Failed to delete category',
+      });
+    }
+  };
 
   // Sales team state
   const [salesMembers, setSalesMembers] = useState<SalesTeamMember[]>(INITIAL_SALES_MEMBERS);
@@ -467,10 +719,40 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
         );
       }
 
-      case 'services':
+      case 'services': {
+        const canAnyServiceAction = canEditService || canDeleteService || canToggleServiceStatus;
+        const displayCategoriesList = liveCategories.length > 0 ? liveCategories : [
+          { id: 1, name: 'AC Service & Repair' },
+          { id: 2, name: 'Electrician Services' },
+          { id: 3, name: 'Plumbing Solutions' },
+          { id: 4, name: 'Water Purifier (RO)' },
+          { id: 5, name: 'Carpentry & Furniture Assembly' },
+          { id: 6, name: 'Facility & Office Maintenance' },
+        ];
+
+        const displayServicesList = (liveServices.length > 0
+          ? liveServices.map((s) => ({
+              id: s.id,
+              raw: s,
+              name: s.name,
+              cat: s.category_name || (s.category && s.category.name) || 'General Catalog',
+              price: s.base_price !== undefined ? `₹${s.base_price}` : (s.price !== undefined ? `₹${s.price}` : '₹499'),
+              dur: s.duration_minutes ? `${s.duration_minutes} mins` : '45 mins',
+              war: s.warranty_days ? `${s.warranty_days} Days` : '30 Days',
+              status: s.is_active !== false && s.status !== 'INACTIVE' ? 'Live' : 'Inactive',
+            }))
+          : [
+              { id: 'srv-1', raw: null, name: 'AC Deep Power Jet Cleaning', cat: 'AC Service & Repair', price: '₹499', dur: '45 mins', war: '30 Days', status: 'Live' },
+              { id: 'srv-2', raw: null, name: 'Split AC Gas Charging (R32/R410)', cat: 'AC Service & Repair', price: '₹1,499', dur: '60 mins', war: '60 Days', status: 'Live' },
+              { id: 'srv-3', raw: null, name: 'Full Home Electrical Audit', cat: 'Electrician Services', price: '₹799', dur: '90 mins', war: '30 Days', status: 'Live' },
+              { id: 'srv-4', raw: null, name: 'Bathroom Concealed Leakage Detection', cat: 'Plumbing Solutions', price: '₹599', dur: '60 mins', war: '30 Days', status: 'Live' },
+              { id: 'srv-5', raw: null, name: 'Copper Filter RO Service & Membrane', cat: 'Water Purifier (RO)', price: '₹899', dur: '45 mins', war: '90 Days', status: 'Live' },
+            ]
+        ).filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.cat.toLowerCase().includes(searchTerm.toLowerCase()));
+
         return (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <Input
                 placeholder="Filter services..."
                 value={searchTerm}
@@ -478,44 +760,48 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 leftIcon={<Search className="w-4 h-4 text-slate-400" />}
                 className="max-w-xs"
               />
-              <Button size="sm" variant="primary" leftIcon={<Plus className="w-4 h-4" />}>
-                Create Service Catalog Item
-              </Button>
+              {/* Conditional RBAC: Only authorized roles (e.g. SUPER_ADMIN) see Create Service button */}
+              {canCreateService && (
+                <Button
+                  id="btn-create-service"
+                  size="sm"
+                  variant="primary"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  onClick={() => {
+                    setServiceForm({
+                      name: '',
+                      category_id: displayCategoriesList[0]?.id || 1,
+                      category_name: displayCategoriesList[0]?.name || 'AC Service & Repair',
+                      base_price: 499,
+                      strike_price: 699,
+                      duration_minutes: 45,
+                      warranty_days: 30,
+                      description: '',
+                    });
+                    setIsCreateServiceModalOpen(true);
+                  }}
+                >
+                  Create Service Catalog Item
+                </Button>
+              )}
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Service Name</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Starting Price</TableHead>
-                  <TableHead>Avg Duration</TableHead>
-                  <TableHead>Warranty</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(liveServices.length > 0
-                  ? liveServices.map((s) => ({
-                      id: s.id,
-                      name: s.name,
-                      cat: s.category_name || s.category_id || 'General Catalog',
-                      price: `₹${s.base_price}`,
-                      dur: s.duration_minutes ? `${s.duration_minutes} mins` : '45 mins',
-                      war: s.warranty_days ? `${s.warranty_days} Days` : '30 Days',
-                      status: s.is_active ? 'Live' : 'Inactive',
-                    }))
-                  : [
-                      { name: 'AC Deep Power Jet Cleaning', cat: 'AC Service & Repair', price: '₹499', dur: '45 mins', war: '30 Days', status: 'Live' },
-                      { name: 'Split AC Gas Charging (R32/R410)', cat: 'AC Service & Repair', price: '₹1,499', dur: '60 mins', war: '60 Days', status: 'Live' },
-                      { name: 'Full Home Electrical Audit', cat: 'Electrician Services', price: '₹799', dur: '90 mins', war: '30 Days', status: 'Live' },
-                      { name: 'Bathroom Concealed Leakage Detection', cat: 'Plumbing Solutions', price: '₹599', dur: '60 mins', war: '30 Days', status: 'Live' },
-                      { name: 'Copper Filter RO Service & Membrane', cat: 'Water Purifier (RO)', price: '₹899', dur: '45 mins', war: '90 Days', status: 'Live' },
-                    ]
-                )
-                  .filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.cat.toLowerCase().includes(searchTerm.toLowerCase()))
-                  .map((s, idx) => (
-                    <TableRow key={idx}>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Service Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Starting Price</TableHead>
+                    <TableHead>Avg Duration</TableHead>
+                    <TableHead>Warranty</TableHead>
+                    <TableHead>Status</TableHead>
+                    {canAnyServiceAction && <TableHead className="text-right">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayServicesList.map((s) => (
+                    <TableRow key={s.id}>
                       <TableCell className="font-bold text-slate-900">{s.name}</TableCell>
                       <TableCell>{s.cat}</TableCell>
                       <TableCell className="font-extrabold text-slate-900">{s.price}</TableCell>
@@ -526,36 +812,173 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                           {s.status}
                         </Badge>
                       </TableCell>
+                      {/* Conditional RBAC: Only authorized roles (SUPER_ADMIN) see action buttons */}
+                      {canAnyServiceAction && (
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {canToggleServiceStatus && (
+                              <Button
+                                id={`btn-toggle-status-${s.id}`}
+                                size="xs"
+                                variant="ghost"
+                                title={s.status === 'Live' ? 'Deactivate Service' : 'Activate Service'}
+                                onClick={() => handleToggleServiceStatus(s.id, s.status === 'Live')}
+                                className={s.status === 'Live' ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}
+                              >
+                                <Power className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                            {canEditService && (
+                              <Button
+                                id={`btn-edit-service-${s.id}`}
+                                size="xs"
+                                variant="ghost"
+                                title="Edit Service"
+                                onClick={() => {
+                                  setSelectedService(s.raw || s);
+                                  setServiceForm({
+                                    name: s.name,
+                                    category_id: s.raw?.category_id || 1,
+                                    category_name: s.cat,
+                                    base_price: Number(String(s.price).replace(/[^\d]/g, '')) || 499,
+                                    strike_price: s.raw?.strike_price || 699,
+                                    duration_minutes: Number(String(s.dur).replace(/[^\d]/g, '')) || 45,
+                                    warranty_days: Number(String(s.war).replace(/[^\d]/g, '')) || 30,
+                                    description: s.raw?.description || '',
+                                  });
+                                  setIsEditServiceModalOpen(true);
+                                }}
+                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                            {canDeleteService && (
+                              <Button
+                                id={`btn-delete-service-${s.id}`}
+                                size="xs"
+                                variant="ghost"
+                                title="Delete Service"
+                                onClick={() => handleDeleteService(s.id, s.name)}
+                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
-              </TableBody>
-            </Table>
+                </TableBody>
+              </Table>
+            </div>
           </div>
+        );
+      }
+
+      case 'categories': {
+        const displayCategories = liveCategories.length > 0 ? liveCategories : [
+          { id: 1, name: 'AC Service & Repair', code: 'AC_COOLING', services: 14, icon: '❄️', active: true },
+          { id: 2, name: 'Electrician Services', code: 'ELECTRICAL', services: 22, icon: '⚡', active: true },
+          { id: 3, name: 'Plumbing Solutions', code: 'PLUMBING', services: 18, icon: '🚰', active: true },
+          { id: 4, name: 'Water Purifier (RO)', code: 'WATER_PURIFIER', services: 9, icon: '💧', active: true },
+          { id: 5, name: 'Carpentry & Furniture Assembly', code: 'CARPENTRY', services: 16, icon: '🪚', active: true },
+          { id: 6, name: 'Facility & Office Maintenance', code: 'FACILITY', services: 12, icon: '🏢', active: true },
+        ];
+
+        const filteredCategories = displayCategories.filter((c: any) =>
+          c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (c.code && c.code.toLowerCase().includes(searchTerm.toLowerCase()))
         );
 
-      case 'categories':
         return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { name: 'AC Service & Repair', services: 14, icon: '❄️', active: true },
-              { name: 'Electrician Services', services: 22, icon: '⚡', active: true },
-              { name: 'Plumbing Solutions', services: 18, icon: '🚰', active: true },
-              { name: 'Water Purifier (RO)', services: 9, icon: '💧', active: true },
-              { name: 'Carpentry & Furniture Assembly', services: 16, icon: '🪚', active: true },
-              { name: 'Facility & Office Maintenance', services: 12, icon: '🏢', active: true },
-            ].map((cat, i) => (
-              <Card key={i} className="p-5">
-                <div className="text-2xl mb-2">{cat.icon}</div>
-                <h3 className="text-sm font-bold text-slate-900">{cat.name}</h3>
-                <p className="text-xs text-slate-500 mt-1">{cat.services} active catalog offerings</p>
-                <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                  <Badge variant="success" size="sm">Active</Badge>
-                  <Button size="sm" variant="ghost" className="text-xs">Edit Category</Button>
-                </div>
-              </Card>
-            ))}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <Input
+                placeholder="Filter categories..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                leftIcon={<Search className="w-4 h-4 text-slate-400" />}
+                className="max-w-xs"
+              />
+              {/* Conditional RBAC: Only users with category management permissions (e.g. SUPER_ADMIN) see Create Category button */}
+              {canManageCategories && (
+                <Button
+                  id="btn-create-category"
+                  size="sm"
+                  variant="primary"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  onClick={() => {
+                    setCategoryForm({
+                      name: '',
+                      code: '',
+                      icon: '🛠️',
+                      description: '',
+                      active: true,
+                    });
+                    setIsCreateCategoryModalOpen(true);
+                  }}
+                >
+                  Create Category
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredCategories.map((cat: any, i: number) => (
+                <Card key={cat.id || i} className="p-5">
+                  <div className="text-2xl mb-2">{cat.icon || '📦'}</div>
+                  <h3 className="text-sm font-bold text-slate-900">{cat.name}</h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {cat.services !== undefined ? `${cat.services} active catalog offerings` : (cat.description || 'Verified service vertical')}
+                  </p>
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <Badge variant={cat.active !== false ? 'success' : 'neutral'} size="sm">
+                      {cat.active !== false ? 'Active' : 'Inactive'}
+                    </Badge>
+
+                    {/* Conditional RBAC: Only users with category management permissions (e.g. SUPER_ADMIN) see Edit and Delete buttons */}
+                    {canManageCategories && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          id={`btn-edit-category-${cat.id || i}`}
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                          onClick={() => {
+                            setSelectedCategory(cat);
+                            setCategoryForm({
+                              name: cat.name,
+                              code: cat.code || '',
+                              icon: cat.icon || '🛠️',
+                              description: cat.description || '',
+                              active: cat.active !== false,
+                            });
+                            setIsEditCategoryModalOpen(true);
+                          }}
+                        >
+                          Edit Category
+                        </Button>
+                        <Button
+                          id={`btn-delete-category-${cat.id || i}`}
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 p-1.5"
+                          title="Delete Category"
+                          onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
           </div>
         );
+      }
 
       case 'locations':
         return (
@@ -738,64 +1161,8 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
         );
 
       case 'crm':
-        return (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Total Leads in Pipeline</span>
-                <div className="text-2xl font-black text-slate-900 mt-1">84 Leads</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Pipeline Value</span>
-                <div className="text-2xl font-black text-emerald-600 mt-1">₹34,50,000</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Converted This Month</span>
-                <div className="text-2xl font-black text-blue-600 mt-1">28 Accounts</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Lead-to-AMC Win Rate</span>
-                <div className="text-2xl font-black text-purple-600 mt-1">36.8%</div>
-              </Card>
-            </div>
-
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Lead ID</TableHead>
-                  <TableHead>Prospect / Client</TableHead>
-                  <TableHead>Service Required</TableHead>
-                  <TableHead>Deal Size</TableHead>
-                  <TableHead>Sales Owner</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[
-                  { id: 'LEAD-901', name: 'DLF CyberParks Phase 3', req: 'Annual HVAC & Electrical AMC', val: '₹4,50,000', owner: 'Karan Mehra', stage: 'Contract Proposal', status: 'In Negotiation' },
-                  { id: 'LEAD-902', name: 'Prestige Ozone Society', req: 'Water Purifier & Plumbing AMC', val: '₹2,80,000', owner: 'Vivek Nair', stage: 'Site Inspection', status: 'Hot' },
-                  { id: 'LEAD-903', name: 'Tech Mahindra SEZ Hub', req: 'Complete Appliance Maintenance', val: '₹6,20,000', owner: 'Rohan Deshmukh', stage: 'Quote Submitted', status: 'Warm' },
-                  { id: 'LEAD-904', name: 'Oberoi Sky City Residencies', req: 'Residential AMC (140 Flats)', val: '₹8,90,000', owner: 'Ankita Sen', stage: 'Initial Meeting', status: 'New' },
-                ].map((lead, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono font-bold text-xs text-slate-900">{lead.id}</TableCell>
-                    <TableCell className="font-bold text-slate-900">{lead.name}</TableCell>
-                    <TableCell>{lead.req}</TableCell>
-                    <TableCell className="font-extrabold text-emerald-600">{lead.val}</TableCell>
-                    <TableCell className="font-medium text-slate-700">{lead.owner}</TableCell>
-                    <TableCell>{lead.stage}</TableCell>
-                    <TableCell>
-                      <Badge variant={lead.status === 'Hot' ? 'danger' : lead.status === 'In Negotiation' ? 'warning' : 'primary'} size="sm">
-                        {lead.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        );
+      case 'leads':
+        return <AdminLeadsView />;
 
       case 'promotions':
         return (
@@ -1208,6 +1575,401 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
       <Card className="p-6 bg-white border border-slate-200 shadow-xs">
         {renderSectionContent()}
       </Card>
+
+      {/* Create Service Modal */}
+      <Modal
+        isOpen={isCreateServiceModalOpen}
+        onClose={() => setIsCreateServiceModalOpen(false)}
+        title="Create Service Catalog Item"
+        description="Add a new verified service to the on-demand customer catalog."
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveNewService} className="space-y-4 pt-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Service Title</label>
+            <Input
+              id="new-service-name"
+              required
+              placeholder="e.g. Inverter Split AC Complete Overhaul"
+              value={serviceForm.name}
+              onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Service Category</label>
+              <select
+                id="new-service-category"
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={serviceForm.category_id}
+                onChange={(e) => {
+                  const catId = Number(e.target.value);
+                  const selectedCat = (liveCategories.length > 0 ? liveCategories : [
+                    { id: 1, name: 'AC Service & Repair' },
+                    { id: 2, name: 'Electrician Services' },
+                    { id: 3, name: 'Plumbing Solutions' },
+                    { id: 4, name: 'Water Purifier (RO)' },
+                    { id: 5, name: 'Carpentry & Furniture Assembly' },
+                    { id: 6, name: 'Facility & Office Maintenance' },
+                  ]).find((c) => c.id === catId);
+                  setServiceForm({
+                    ...serviceForm,
+                    category_id: catId,
+                    category_name: selectedCat?.name || serviceForm.category_name,
+                  });
+                }}
+              >
+                {(liveCategories.length > 0 ? liveCategories : [
+                  { id: 1, name: 'AC Service & Repair' },
+                  { id: 2, name: 'Electrician Services' },
+                  { id: 3, name: 'Plumbing Solutions' },
+                  { id: 4, name: 'Water Purifier (RO)' },
+                  { id: 5, name: 'Carpentry & Furniture Assembly' },
+                  { id: 6, name: 'Facility & Office Maintenance' },
+                ]).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Estimated Duration (Mins)</label>
+              <Input
+                id="new-service-duration"
+                type="number"
+                min={15}
+                step={5}
+                required
+                value={serviceForm.duration_minutes}
+                onChange={(e) => setServiceForm({ ...serviceForm, duration_minutes: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Base Starting Price (₹)</label>
+              <Input
+                id="new-service-base-price"
+                type="number"
+                min={0}
+                required
+                value={serviceForm.base_price}
+                onChange={(e) => setServiceForm({ ...serviceForm, base_price: Number(e.target.value) })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Strike-through Price (₹)</label>
+              <Input
+                id="new-service-strike-price"
+                type="number"
+                min={0}
+                value={serviceForm.strike_price}
+                onChange={(e) => setServiceForm({ ...serviceForm, strike_price: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Warranty Period (Days)</label>
+            <Input
+              id="new-service-warranty"
+              type="number"
+              min={0}
+              value={serviceForm.warranty_days}
+              onChange={(e) => setServiceForm({ ...serviceForm, warranty_days: Number(e.target.value) })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Description & Scope</label>
+            <textarea
+              id="new-service-description"
+              rows={3}
+              className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Detailed description of labor, spare parts policy, and inspection protocols..."
+              value={serviceForm.description}
+              onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateServiceModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button id="btn-submit-create-service" type="submit" variant="primary" size="sm">
+              Save Service
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Service Modal */}
+      <Modal
+        isOpen={isEditServiceModalOpen}
+        onClose={() => setIsEditServiceModalOpen(false)}
+        title="Edit Service Catalog Item"
+        description="Update pricing, warranty, category, and scope details."
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveEditService} className="space-y-4 pt-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Service Title</label>
+            <Input
+              id="edit-service-name"
+              required
+              value={serviceForm.name}
+              onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Service Category</label>
+              <select
+                id="edit-service-category"
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                value={serviceForm.category_id}
+                onChange={(e) => {
+                  const catId = Number(e.target.value);
+                  const selectedCat = (liveCategories.length > 0 ? liveCategories : [
+                    { id: 1, name: 'AC Service & Repair' },
+                    { id: 2, name: 'Electrician Services' },
+                    { id: 3, name: 'Plumbing Solutions' },
+                    { id: 4, name: 'Water Purifier (RO)' },
+                    { id: 5, name: 'Carpentry & Furniture Assembly' },
+                    { id: 6, name: 'Facility & Office Maintenance' },
+                  ]).find((c) => c.id === catId);
+                  setServiceForm({
+                    ...serviceForm,
+                    category_id: catId,
+                    category_name: selectedCat?.name || serviceForm.category_name,
+                  });
+                }}
+              >
+                {(liveCategories.length > 0 ? liveCategories : [
+                  { id: 1, name: 'AC Service & Repair' },
+                  { id: 2, name: 'Electrician Services' },
+                  { id: 3, name: 'Plumbing Solutions' },
+                  { id: 4, name: 'Water Purifier (RO)' },
+                  { id: 5, name: 'Carpentry & Furniture Assembly' },
+                  { id: 6, name: 'Facility & Office Maintenance' },
+                ]).map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Estimated Duration (Mins)</label>
+              <Input
+                id="edit-service-duration"
+                type="number"
+                min={15}
+                step={5}
+                required
+                value={serviceForm.duration_minutes}
+                onChange={(e) => setServiceForm({ ...serviceForm, duration_minutes: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Base Starting Price (₹)</label>
+              <Input
+                id="edit-service-base-price"
+                type="number"
+                min={0}
+                required
+                value={serviceForm.base_price}
+                onChange={(e) => setServiceForm({ ...serviceForm, base_price: Number(e.target.value) })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Strike-through Price (₹)</label>
+              <Input
+                id="edit-service-strike-price"
+                type="number"
+                min={0}
+                value={serviceForm.strike_price}
+                onChange={(e) => setServiceForm({ ...serviceForm, strike_price: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Warranty Period (Days)</label>
+            <Input
+              id="edit-service-warranty"
+              type="number"
+              min={0}
+              value={serviceForm.warranty_days}
+              onChange={(e) => setServiceForm({ ...serviceForm, warranty_days: Number(e.target.value) })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Description & Scope</label>
+            <textarea
+              id="edit-service-description"
+              rows={3}
+              className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={serviceForm.description}
+              onChange={(e) => setServiceForm({ ...serviceForm, description: e.target.value })}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsEditServiceModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button id="btn-submit-edit-service" type="submit" variant="primary" size="sm">
+              Save Changes
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Create Category Modal */}
+      <Modal
+        isOpen={isCreateCategoryModalOpen}
+        onClose={() => setIsCreateCategoryModalOpen(false)}
+        title="Create Service Category"
+        description="Add a top-level category vertical to group service offerings."
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveNewCategory} className="space-y-4 pt-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Category Name</label>
+            <Input
+              id="new-category-name"
+              required
+              placeholder="e.g. Smart Home & Automation"
+              value={categoryForm.name}
+              onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Category Code</label>
+              <Input
+                id="new-category-code"
+                placeholder="SMART_HOME"
+                value={categoryForm.code}
+                onChange={(e) => setCategoryForm({ ...categoryForm, code: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Icon / Emoji</label>
+              <Input
+                id="new-category-icon"
+                placeholder="🏠"
+                value={categoryForm.icon}
+                onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+            <textarea
+              id="new-category-desc"
+              rows={2}
+              className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Summary of services under this category..."
+              value={categoryForm.description}
+              onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateCategoryModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button id="btn-submit-create-category" type="submit" variant="primary" size="sm">
+              Create Category
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Category Modal */}
+      <Modal
+        isOpen={isEditCategoryModalOpen}
+        onClose={() => setIsEditCategoryModalOpen(false)}
+        title="Edit Service Category"
+        description="Update category name, icon, code, or active status."
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveEditCategory} className="space-y-4 pt-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Category Name</label>
+            <Input
+              id="edit-category-name"
+              required
+              value={categoryForm.name}
+              onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Category Code</label>
+              <Input
+                id="edit-category-code"
+                value={categoryForm.code}
+                onChange={(e) => setCategoryForm({ ...categoryForm, code: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Icon / Emoji</label>
+              <Input
+                id="edit-category-icon"
+                value={categoryForm.icon}
+                onChange={(e) => setCategoryForm({ ...categoryForm, icon: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+            <textarea
+              id="edit-category-desc"
+              rows={2}
+              className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={categoryForm.description}
+              onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="edit-category-active"
+              checked={categoryForm.active}
+              onChange={(e) => setCategoryForm({ ...categoryForm, active: e.target.checked })}
+              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="edit-category-active" className="text-xs font-medium text-slate-700">
+              Active in catalog and customer booking flow
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsEditCategoryModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button id="btn-submit-edit-category" type="submit" variant="primary" size="sm">
+              Save Changes
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

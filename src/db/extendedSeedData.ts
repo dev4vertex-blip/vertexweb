@@ -230,25 +230,40 @@ export const INITIAL_SERVICES: ServiceRecord[] = [
 
 export interface AmcPlanRecord {
   id: string;
-  public_id: string;
+  public_id?: string;
   name: string;
-  slug: string;
-  description: string;
+  code?: string;
+  tier?: string;
+  appliance_category?: string;
+  slug?: string;
+  description?: string;
   duration_months: number;
-  price: number;
-  tax_percent: number;
-  included_services: string[];
-  visit_frequency: string;
-  preventive_maintenance_visits: number;
-  emergency_coverage: string;
-  benefits: string[];
-  exclusions: string[];
-  service_limits: string;
-  renewal_rules: string;
-  eligibility: string;
-  terms: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
-  active_subscriptions_count: number;
+  price?: number;
+  base_price?: number;
+  strike_price?: number | null;
+  tax_percent?: number;
+  preventive_visits?: number;
+  breakdown_visits?: number;
+  spare_parts_discount_percent?: number;
+  gas_charging_included?: boolean;
+  priority_sla_hours?: number;
+  coverage_details?: string | null;
+  features?: string[];
+  terms_conditions?: string | null;
+  sort_order?: number;
+  included_services?: string[];
+  visit_frequency?: string;
+  preventive_maintenance_visits?: number;
+  emergency_coverage?: string;
+  benefits?: string[];
+  exclusions?: string[];
+  service_limits?: string;
+  renewal_rules?: string;
+  eligibility?: string;
+  terms?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  is_active?: boolean;
+  active_subscriptions_count?: number;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -372,17 +387,25 @@ export interface PartnerRecord {
   phone: string;
   email: string;
   status: 'ACTIVE' | 'INACTIVE';
-  address: string;
-  city_id: number;
+  address?: string;
+  city_id?: number;
   city_name?: string;
-  commission_type: 'PERCENTAGE' | 'FIXED' | 'TIERED';
-  default_rate: number;
-  bank_account_masked: string;
-  pan_masked: string;
+  commission_type?: 'PERCENTAGE' | 'FIXED' | 'TIERED';
+  default_rate?: number;
+  bank_account_masked?: string;
+  pan_masked?: string;
   gstin?: string;
+  pan_number?: string | null;
+  gst_number?: string | null;
+  bank_account_number?: string | null;
+  bank_ifsc?: string | null;
+  bank_name?: string | null;
+  tier?: string;
+  total_referrals?: number;
   total_commission_earned: number;
   total_commission_paid: number;
-  pending_commission: number;
+  pending_commission?: number;
+  notes?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -391,31 +414,46 @@ export interface PartnerRecord {
 export interface CommissionRuleRecord {
   id: string;
   version: number;
-  rule_name: string;
+  rule_name?: string;
+  name?: string;
   effective_from: string;
   effective_to?: string | null;
-  commission_type: 'PERCENTAGE' | 'FIXED';
-  service_percentage: number;
-  amc_percentage: number;
-  lead_conversion_amount: number;
-  status: 'ACTIVE' | 'UPCOMING' | 'ARCHIVED';
-  notes: string;
-  created_by: string;
+  rule_type?: 'PERCENTAGE' | 'FIXED';
+  commission_type?: 'PERCENTAGE' | 'FIXED';
+  rate_value?: number;
+  applies_to?: string;
+  service_id?: string | null;
+  category_id?: number | null;
+  amc_plan_id?: string | null;
+  partner_tier?: string;
+  service_percentage?: number;
+  amc_percentage?: number;
+  lead_conversion_amount?: number;
+  min_booking_value?: number | null;
+  is_active?: boolean;
+  status?: 'ACTIVE' | 'UPCOMING' | 'ARCHIVED';
+  notes?: string | null;
+  description?: string | null;
+  created_by?: string;
   created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
 }
 
 export interface PartnerCommissionRecord {
   id: string;
   public_id: string;
   partner_id: string;
-  partner_name: string;
+  partner_name?: string;
   booking_id?: string | null;
   lead_id?: string | null;
-  service_name: string;
-  rule_version: number;
-  base_amount: number;
+  commission_rule_id?: string | null;
+  service_name?: string;
+  rule_version?: number;
+  base_amount?: number;
+  booking_amount?: number;
   commission_amount: number;
-  status: 'PENDING' | 'APPROVED' | 'PAID' | 'DISPUTED';
+  status: 'PENDING' | 'PENDING_APPROVAL' | 'APPROVED' | 'PAID' | 'DISPUTED';
   dispute_reason?: string | null;
   approved_by?: string | null;
   approved_at?: string | null;
@@ -599,15 +637,22 @@ export interface DepartmentRecord {
   manager_id?: string | null;
   manager_name?: string | null;
   created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
 }
 
 export interface DesignationRecord {
   id: string;
   title: string;
+  code?: string;
   department_id: string;
-  department_name: string;
+  department_name?: string;
   level: string;
+  description?: string;
+  is_active?: boolean;
   created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
 }
 
 export interface ShiftRecord {
@@ -617,57 +662,65 @@ export interface ShiftRecord {
   end_time: string;
   grace_period_mins: number;
   created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
 }
 
 export interface EmployeeRecord {
   id: string;
-  employee_id: string; // e.g. 'VXEMP-001'
+  employee_id?: string; // e.g. 'VXEMP-001'
   employee_code?: string;
   user_id?: string | null;
-  full_name: string;
+  full_name?: string;
   first_name?: string;
   last_name?: string;
   profile_photo?: string | null;
-  dob: string;
-  gender: 'MALE' | 'FEMALE' | 'OTHER';
-  personal_email: string;
-  personal_phone: string;
-  emergency_contact: {
+  dob?: string;
+  gender?: 'MALE' | 'FEMALE' | 'OTHER';
+  personal_email?: string | null;
+  work_email?: string | null;
+  personal_phone?: string;
+  phone?: string;
+  emergency_contact?: {
     name: string;
     phone: string;
     relation: string;
   };
-  address: {
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  address?: {
     street: string;
     city: string;
     state: string;
     pincode: string;
   };
-  joining_date: string;
-  employment_status: 'ACTIVE' | 'PROBATION' | 'ON_NOTICE' | 'ON_LEAVE' | 'SUSPENDED' | 'RESIGNED' | 'TERMINATED' | 'INACTIVE';
+  joining_date?: string;
+  date_of_joining?: string;
+  employment_status?: 'ACTIVE' | 'PROBATION' | 'ON_NOTICE' | 'ON_LEAVE' | 'SUSPENDED' | 'RESIGNED' | 'TERMINATED' | 'INACTIVE';
   status?: string;
   department_id: string;
-  department_name: string;
+  department_name?: string;
   designation_id: string;
-  designation_name: string;
-  reporting_manager_id: string | null;
-  reporting_manager_name: string | null;
-  work_location: string;
-  employment_type: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT';
-  shift_id: string;
-  shift_name: string;
+  designation_name?: string;
+  reporting_manager_id?: string | null;
+  reporting_manager_name?: string | null;
+  work_location?: string;
+  employment_type?: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | string;
+  shift_id?: string;
+  shift_name?: string;
   // Sensitive identity & banking info (masked in general queries):
-  bank_account_number: string;
-  bank_name: string;
-  bank_ifsc: string;
-  pan_number: string;
-  aadhaar_masked: string;
+  bank_account_number?: string | null;
+  bank_name?: string | null;
+  bank_ifsc?: string | null;
+  pan_number?: string | null;
+  aadhaar_masked?: string | null;
   uan_number?: string | null;
-  pf_applicable: boolean;
-  esi_applicable: boolean;
-  pt_applicable: boolean;
-  salary_structure_id: string;
-  monthly_ctc: number;
+  pf_applicable?: boolean;
+  esi_applicable?: boolean;
+  pt_applicable?: boolean;
+  salary_structure_id?: string;
+  monthly_ctc?: number;
+  base_salary?: number;
   exit_date?: string | null;
   exit_reason?: string | null;
   created_at: string;
@@ -678,17 +731,23 @@ export interface EmployeeRecord {
 export interface EmployeeAttendanceRecord {
   id: string;
   employee_id: string;
-  employee_name: string;
+  employee_name?: string;
   date: string;
-  status: 'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'LEAVE' | 'WEEKLY_OFF' | 'HOLIDAY' | 'LATE';
+  status: 'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'LEAVE' | 'WEEKLY_OFF' | 'HOLIDAY' | 'LATE' | string;
   punch_in?: string | null;
   punch_out?: string | null;
+  check_in?: string | null;
+  check_out?: string | null;
   work_hours: number;
-  overtime_hours: number;
-  correction_status: 'NONE' | 'REQUESTED' | 'APPROVED' | 'REJECTED';
+  overtime_hours?: number;
+  correction_status?: 'NONE' | 'REQUESTED' | 'APPROVED' | 'REJECTED';
   correction_reason?: string | null;
   approved_by?: string | null;
+  shift_id?: string;
+  is_overridden?: boolean;
+  notes?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface LeaveTypeRecord {
@@ -703,20 +762,23 @@ export interface LeaveTypeRecord {
 export interface LeaveBalanceRecord {
   id: string;
   employee_id: string;
-  leave_type_code: string;
+  leave_type_code?: string;
+  leave_type_id?: string;
   total_allocated: number;
   used_days: number;
-  pending_days: number;
-  balance_days: number;
+  pending_days?: number;
+  balance_days?: number;
+  remaining_days?: number;
 }
 
 export interface LeaveRequestRecord {
   id: string;
-  public_id: string;
+  public_id?: string;
   employee_id: string;
-  employee_name: string;
+  employee_name?: string;
   reporting_manager_id?: string | null;
-  leave_type_code: string;
+  leave_type_code?: string;
+  leave_type_id?: string;
   start_date: string;
   end_date: string;
   total_days: number;
@@ -724,7 +786,11 @@ export interface LeaveRequestRecord {
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
   applied_at: string;
   approved_by?: string | null;
+  approved_at?: string | null;
   rejection_reason?: string | null;
+  remarks?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface HolidayRecord {
@@ -758,6 +824,7 @@ export interface RecruitmentJobRecord {
   experience_required: string;
   location: string;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface CandidateRecord {
@@ -768,10 +835,11 @@ export interface CandidateRecord {
   email: string;
   phone: string;
   stage: 'APPLIED' | 'SCREENING' | 'INTERVIEW_ROUND_1' | 'INTERVIEW_ROUND_2' | 'OFFERED' | 'HIRED' | 'REJECTED';
-  expected_salary: number;
+  expected_salary?: number;
   offered_salary?: number;
   notes?: string;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface EmployeeExitRecord {
@@ -1179,9 +1247,9 @@ export const INITIAL_EXITS: EmployeeExitRecord[] = [
 
 export interface SalaryStructureRecord {
   id: string;
-  name: string;
-  description: string;
-  version: number;
+  name?: string;
+  description?: string;
+  version?: number;
   effective_from: string;
   effective_to?: string | null;
   employee_id?: string;
@@ -1190,30 +1258,33 @@ export interface SalaryStructureRecord {
   hra?: number;
   special_allowance?: number;
   provident_fund_employee?: number;
+  provident_fund_employer?: number;
   professional_tax?: number;
   tds_monthly?: number;
   conveyance_allowance?: number;
   medical_allowance?: number;
   esi_employee?: number;
-  basic_percent: number; // e.g. 50%
-  hra_percent: number;   // e.g. 20%
-  special_allowance_percent: number; // e.g. 30%
-  conveyance_monthly: number;
-  medical_monthly: number;
-  pf_employee_rate: number; // default 12%
-  pf_employer_rate: number; // default 12%
-  esi_employee_rate: number; // default 0.75%
-  esi_employer_rate: number; // default 3.25%
-  pt_monthly: number;        // default 200
-  tds_applicable: boolean;
-  active: boolean;
-  statutory_disclaimer: string;
+  basic_percent?: number; // e.g. 50%
+  hra_percent?: number;   // e.g. 20%
+  special_allowance_percent?: number; // e.g. 30%
+  conveyance_monthly?: number;
+  medical_monthly?: number;
+  pf_employee_rate?: number; // default 12%
+  pf_employer_rate?: number; // default 12%
+  esi_employee_rate?: number; // default 0.75%
+  esi_employer_rate?: number; // default 3.25%
+  pt_monthly?: number;        // default 200
+  tds_applicable?: boolean;
+  active?: boolean;
+  statutory_disclaimer?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PayrollRunRecord {
   id: string;
-  public_id: string;
-  month_year: string; // "2026-08"
+  public_id?: string;
+  month_year?: string; // "2026-08"
   month?: number;
   year?: number;
   title?: string;
@@ -1221,7 +1292,7 @@ export interface PayrollRunRecord {
   total_gross: number;
   total_deductions: number;
   total_net: number;
-  employee_count: number;
+  employee_count?: number;
   total_employees?: number;
   processed_by?: string | null;
   processed_at?: string | null;

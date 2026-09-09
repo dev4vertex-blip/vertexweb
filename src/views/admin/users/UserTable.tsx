@@ -75,8 +75,11 @@ export const UserTable: React.FC<UserTableProps> = ({
   const canEdit = (targetUser: UserListItem) => {
     if (!currentUser) return false;
     if (currentUser.role === 'SUPER_ADMIN') return true;
+    if (currentUser.role === 'ADMIN') {
+      return targetUser.role !== 'SUPER_ADMIN';
+    }
     if (currentUser.role === 'MANAGER') {
-      return targetUser.role === 'SALES';
+      return targetUser.role === 'SALES' || targetUser.role === 'SALES_TEAM';
     }
     return false;
   };
@@ -85,8 +88,11 @@ export const UserTable: React.FC<UserTableProps> = ({
   const canToggle = (targetUser: UserListItem) => {
     if (!currentUser) return false;
     if (currentUser.role === 'SUPER_ADMIN') return true;
+    if (currentUser.role === 'ADMIN') {
+      return targetUser.role !== 'SUPER_ADMIN';
+    }
     if (currentUser.role === 'MANAGER') {
-      return targetUser.role === 'SALES';
+      return targetUser.role === 'SALES' || targetUser.role === 'SALES_TEAM';
     }
     return false;
   };
@@ -95,6 +101,7 @@ export const UserTable: React.FC<UserTableProps> = ({
   const canDelete = (targetUser: UserListItem) => {
     if (!currentUser) return false;
     if (currentUser.role === 'SUPER_ADMIN' && targetUser.role !== 'SUPER_ADMIN') return true;
+    if (currentUser.role === 'ADMIN' && !['SUPER_ADMIN', 'ADMIN'].includes(targetUser.role)) return true;
     return false;
   };
 

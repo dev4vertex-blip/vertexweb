@@ -69,6 +69,86 @@ router.post('/categories', requirePermission('SERVICE_CATEGORY_MANAGE'), async (
 });
 
 /**
+ * PUT /api/v1/services/categories/:id
+ * Update an existing service category
+ */
+router.put('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const category = memoryStore.serviceCategories.find((c) => c.id === id && !c.deleted_at);
+    if (!category) {
+      return res.status(404).json({ success: false, error: 'Category not found' });
+    }
+
+    const oldCategory = { ...category };
+    const { name, code, icon, description, sort_order, active } = req.body;
+
+    if (name) category.name = name;
+    if (code) {
+      category.code = String(code).toUpperCase().trim();
+      category.slug = String(code).toLowerCase().replace(/\s+/g, '-');
+    }
+    if (icon !== undefined) category.icon = icon;
+    if (description !== undefined) category.description = description;
+    if (sort_order !== undefined) category.sort_order = Number(sort_order);
+    if (active !== undefined) category.active = Boolean(active);
+
+    await logAuditEvent({
+      userId: req.user?.id,
+      userName: req.user?.name,
+      userRole: req.user?.role,
+      action: 'SERVICE_CATEGORY_UPDATE',
+      entity: 'SERVICE_CATEGORY',
+      entityId: String(id),
+      oldValue: oldCategory,
+      newValue: category,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.json({ success: true, data: category });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to update category';
+    return res.status(500).json({ success: false, error: msg });
+  }
+});
+
+/**
+ * DELETE /api/v1/services/categories/:id
+ * Delete a service category
+ */
+router.delete('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const id = Number(req.params.id);
+    const category = memoryStore.serviceCategories.find((c) => c.id === id && !c.deleted_at);
+    if (!category) {
+      return res.status(404).json({ success: false, error: 'Category not found' });
+    }
+
+    category.deleted_at = new Date().toISOString();
+    category.active = false;
+
+    await logAuditEvent({
+      userId: req.user?.id,
+      userName: req.user?.name,
+      userRole: req.user?.role,
+      action: 'SERVICE_CATEGORY_DELETE',
+      entity: 'SERVICE_CATEGORY',
+      entityId: String(id),
+      oldValue: { active: true, deleted_at: null },
+      newValue: { active: false, deleted_at: category.deleted_at },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+
+    return res.json({ success: true, message: 'Category deleted successfully' });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to delete category';
+    return res.status(500).json({ success: false, error: msg });
+  }
+});
+
+/**
  * GET /api/v1/services
  * List all services with category info
  */
@@ -247,13 +327,15 @@ router.put('/:id', requirePermission('SERVICE_EDIT'), async (req: AuthenticatedR
 });
 
 /**
- * PATCH /api/v1/services/:id/pricing
+ * PATCH /api/v1/services/:id/pricing & /api/v1/services/:id/price
  * Dedicated pricing update (SERVICE_PRICE_EDIT)
  */
-router.patch('/:id/pricing', requirePermission('SERVICE_PRICE_EDIT'), async (req: AuthenticatedRequest, res) => {
+router.patch(['/:id/pricing', '/:id/price'], requirePermission('SERVICE_PRICE_EDIT'), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const { base_price, strike_price, tax_rate } = req.body;
+    const base_price = req.body.base_price !== undefined ? req.body.base_price : req.body.basePrice;
+    const strike_price = req.body.strike_price !== undefined ? req.body.strike_price : req.body.strikePrice;
+    const tax_rate = req.body.tax_rate !== undefined ? req.body.tax_rate : req.body.taxRate;
 
     const service = memoryStore.services.find((s) => s.id === id && !s.deleted_at);
     if (!service) {
@@ -307,14 +389,24 @@ router.patch('/:id/pricing', requirePermission('SERVICE_PRICE_EDIT'), async (req
 router.patch('/:id/status', async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const { is_active } = req.body;
-    const requiredPerm = is_active ? 'SERVICE_ACTIVATE' : 'SERVICE_DEACTIVATE';
+    const targetActive = req.body.is_active !== undefined ? Boolean(req.body.is_active) : Boolean(req.body.active);
+    const requiredPerm = targetActive ? 'SERVICE_ACTIVATE' : 'SERVICE_DEACTIVATE';
 
-    // Verify user has the required permission
+    // Super Admin has unconditional bypass across all service operations
+    const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
+    const userPermissions: string[] = req.user?.permissions || [];
     const userRole = req.user?.role;
-    const hasPerm = memoryStore.rolePermissions.some(
-      (rp) => rp.role_code === userRole && (rp.permission_code === requiredPerm || rp.permission_code === 'SERVICE_EDIT' || userRole === 'SUPER_ADMIN')
-    );
+
+    const hasPerm =
+      isSuperAdmin ||
+      userPermissions.includes(requiredPerm) ||
+      userPermissions.includes('SERVICE_EDIT') ||
+      userPermissions.includes('SERVICE_MANAGE') ||
+      memoryStore.rolePermissions.some(
+        (rp) =>
+          rp.role_code === userRole &&
+          (rp.permission_code === requiredPerm || rp.permission_code === 'SERVICE_EDIT' || rp.permission_code === 'SERVICE_MANAGE')
+      );
 
     if (!hasPerm) {
       return res.status(403).json({ success: false, error: `Forbidden: requires ${requiredPerm}` });
@@ -326,15 +418,15 @@ router.patch('/:id/status', async (req: AuthenticatedRequest, res) => {
     }
 
     const oldStatus = service.is_active;
-    service.is_active = Boolean(is_active);
-    service.status = is_active ? 'ACTIVE' : 'INACTIVE';
+    service.is_active = targetActive;
+    service.status = targetActive ? 'ACTIVE' : 'INACTIVE';
     service.updated_at = new Date().toISOString();
 
     await logAuditEvent({
       userId: req.user?.id,
       userName: req.user?.name,
       userRole: req.user?.role,
-      action: is_active ? 'SERVICE_ACTIVATE' : 'SERVICE_DEACTIVATE',
+      action: targetActive ? 'SERVICE_ACTIVATE' : 'SERVICE_DEACTIVATE',
       entity: 'SERVICE',
       entityId: id,
       oldValue: { is_active: oldStatus },
