@@ -287,7 +287,14 @@ router.post('/login', authRateLimiter, async (req, res) => {
 
     // Verify password; allow test passwords ONLY when demo mode is active
     const match = await verifyPassword(password, targetUser.password_hash);
-    const isDemoPass = demoEnabled && (password === 'password123' || password === 'admin123' || password === 'demo');
+    const isDemoPass =
+      demoEnabled &&
+      (password === 'Admin@123' ||
+        password === 'admin@123' ||
+        password === 'password123' ||
+        password === 'admin123' ||
+        password === 'demo' ||
+        password === 'Admin@1234');
     if (!match && !isDemoPass) {
       return res.status(401).json({
         success: false,

@@ -262,6 +262,199 @@ export interface PaymentRecord {
   updated_at: string;
 }
 
+export interface PromotionRecord {
+  id: string;
+  name: string;
+  code: string;
+  description?: string | null;
+  promotion_type: string;
+  discount_type: 'PERCENTAGE' | 'FIXED';
+  discount_value: number;
+  min_order_value: number;
+  max_discount?: number | null;
+  start_date?: string | null;
+  start_time?: string | null;
+  end_date?: string | null;
+  end_time?: string | null;
+  applicable_categories?: string[] | string | null;
+  applicable_services?: string[] | string | null;
+  customer_segment?: string;
+  usage_limit: number;
+  usage_count: number;
+  per_customer_limit: number;
+  status: 'DRAFT' | 'ACTIVE' | 'INACTIVE' | 'EXPIRED' | 'ARCHIVED';
+  terms_and_conditions?: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string | null;
+}
+
+export const INITIAL_PROMOTIONS: PromotionRecord[] = [
+  {
+    id: 'promo-01',
+    name: 'New Customer Welcome',
+    code: 'VERTEXFIRST',
+    description: 'Flat ₹150 OFF on first service booking across all categories',
+    promotion_type: 'FIXED_AMOUNT',
+    discount_type: 'FIXED',
+    discount_value: 150,
+    min_order_value: 499,
+    max_discount: 150,
+    start_date: '2026-01-01',
+    start_time: '00:00',
+    end_date: '2026-12-31',
+    end_time: '23:59',
+    applicable_categories: ['All'],
+    applicable_services: ['All Services'],
+    customer_segment: 'NEW',
+    usage_limit: 1000,
+    usage_count: 840,
+    per_customer_limit: 1,
+    status: 'ACTIVE',
+    terms_and_conditions: 'Valid only for first-time booked customers on VERTEX platform.',
+    created_by: 'SUPER_ADMIN',
+    created_at: new Date(Date.now() - 60 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 5 * 86400000).toISOString(),
+    deleted_at: null,
+  },
+  {
+    id: 'promo-02',
+    name: 'Summer AC Festival',
+    code: 'ACCHILL20',
+    description: '20% OFF on all AC Foam Jet & Deep Cleaning Services (capped at ₹300)',
+    promotion_type: 'CATEGORY_SPECIFIC',
+    discount_type: 'PERCENTAGE',
+    discount_value: 20,
+    min_order_value: 799,
+    max_discount: 300,
+    start_date: '2026-03-01',
+    start_time: '00:00',
+    end_date: '2026-10-30',
+    end_time: '23:59',
+    applicable_categories: ['AC & Cooling', 'HVAC'],
+    applicable_services: ['AC Deep Clean', 'Foam Jet Service'],
+    customer_segment: 'ALL',
+    usage_limit: 500,
+    usage_count: 412,
+    per_customer_limit: 2,
+    status: 'ACTIVE',
+    terms_and_conditions: 'Maximum discount ₹300. Applicable on AC service categories.',
+    created_by: 'SUPER_ADMIN',
+    created_at: new Date(Date.now() - 45 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+    deleted_at: null,
+  },
+  {
+    id: 'promo-03',
+    name: 'Annual Contract Special',
+    code: 'AMCSHIELD500',
+    description: 'Flat ₹500 discount on any residential or commercial AMC shield package',
+    promotion_type: 'AMC',
+    discount_type: 'FIXED',
+    discount_value: 500,
+    min_order_value: 2499,
+    max_discount: 500,
+    start_date: '2026-01-01',
+    start_time: '00:00',
+    end_date: '2026-12-31',
+    end_time: '23:59',
+    applicable_categories: ['AMC'],
+    applicable_services: ['Comprehensive AMC', 'Basic AMC Plan'],
+    customer_segment: 'ALL',
+    usage_limit: 200,
+    usage_count: 128,
+    per_customer_limit: 1,
+    status: 'ACTIVE',
+    terms_and_conditions: 'Requires minimum booking or AMC cart value of ₹2,499.',
+    created_by: 'SUPER_ADMIN',
+    created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 1 * 86400000).toISOString(),
+    deleted_at: null,
+  },
+  {
+    id: 'promo-04',
+    name: 'Electrical & Plumbing Drive',
+    code: 'HOMESAFE10',
+    description: '10% OFF on essential electrical repairs, wiring audit, and plumbing check',
+    promotion_type: 'SEASONAL',
+    discount_type: 'PERCENTAGE',
+    discount_value: 10,
+    min_order_value: 350,
+    max_discount: 200,
+    start_date: '2026-06-01',
+    start_time: '00:00',
+    end_date: '2026-11-20',
+    end_time: '23:59',
+    applicable_categories: ['Electrical', 'Plumbing', 'Repairs'],
+    applicable_services: ['Switchboard Repair', 'Pipe Leakage Fix'],
+    customer_segment: 'ALL',
+    usage_limit: 100,
+    usage_count: 40,
+    per_customer_limit: 3,
+    status: 'ACTIVE',
+    terms_and_conditions: 'Valid across electrical and plumbing services. Capped at ₹200.',
+    created_by: 'SUPER_ADMIN',
+    created_at: new Date(Date.now() - 20 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+    deleted_at: null,
+  },
+  {
+    id: 'promo-05',
+    name: 'Customer App Welcome',
+    code: 'VERTEXNEW',
+    description: 'Flat ₹100 Off on First Service for customer mobile/web orders',
+    promotion_type: 'FIXED_AMOUNT',
+    discount_type: 'FIXED',
+    discount_value: 100,
+    min_order_value: 299,
+    max_discount: 100,
+    start_date: '2026-01-01',
+    start_time: '00:00',
+    end_date: '2026-12-31',
+    end_time: '23:59',
+    applicable_categories: ['All'],
+    applicable_services: ['All Services'],
+    customer_segment: 'NEW',
+    usage_limit: 2000,
+    usage_count: 620,
+    per_customer_limit: 1,
+    status: 'ACTIVE',
+    terms_and_conditions: 'Min order value ₹299.',
+    created_by: 'SUPER_ADMIN',
+    created_at: new Date(Date.now() - 15 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 1 * 86400000).toISOString(),
+    deleted_at: null,
+  },
+  {
+    id: 'promo-06',
+    name: 'Festive Flash Deal',
+    code: 'FESTIVE20',
+    description: '20% Off Electrical & Plumbing Overhaul',
+    promotion_type: 'CAMPAIGN',
+    discount_type: 'PERCENTAGE',
+    discount_value: 20,
+    min_order_value: 399,
+    max_discount: 250,
+    start_date: '2026-08-01',
+    start_time: '00:00',
+    end_date: '2026-11-15',
+    end_time: '23:59',
+    applicable_categories: ['Repairs', 'Electrical'],
+    applicable_services: ['Comprehensive Overhaul'],
+    customer_segment: 'ALL',
+    usage_limit: 300,
+    usage_count: 95,
+    per_customer_limit: 1,
+    status: 'ACTIVE',
+    terms_and_conditions: 'Valid until 15 Nov 2026.',
+    created_by: 'SUPER_ADMIN',
+    created_at: new Date(Date.now() - 10 * 86400000).toISOString(),
+    updated_at: new Date(Date.now() - 1 * 86400000).toISOString(),
+    deleted_at: null,
+  },
+];
+
 class MemoryStore {
   public states: StateRecord[] = [
     { id: 1, name: 'Delhi', code: 'DL', created_at: new Date().toISOString() },
@@ -374,6 +567,14 @@ class MemoryStore {
     { code: 'PROMOTION_EDIT', name: 'Edit Promotions', category: 'Marketing', description: 'Adjust campaign validity and discount tiers', created_at: new Date().toISOString() },
     { code: 'PROMOTION_DELETE', name: 'Delete Promotions', category: 'Marketing', description: 'Decommission marketing promotions', created_at: new Date().toISOString() },
     { code: 'PROMOTION_ACTIVATE', name: 'Activate Promotions', category: 'Marketing', description: 'Turn promotional campaign active on platform', created_at: new Date().toISOString() },
+    { code: 'PROMOTION_DEACTIVATE', name: 'Deactivate Promotions', category: 'Marketing', description: 'Pause or deactivate promotional campaigns', created_at: new Date().toISOString() },
+    { code: 'PROMOTION_MANAGE', name: 'Manage Promotions', category: 'Marketing', description: 'Full administrative control over all marketing campaigns', created_at: new Date().toISOString() },
+    { code: 'OFFER_VIEW', name: 'View Offers', category: 'Marketing', description: 'View promotional offers and vouchers', created_at: new Date().toISOString() },
+    { code: 'OFFER_CREATE', name: 'Create Offers', category: 'Marketing', description: 'Create consumer offers and vouchers', created_at: new Date().toISOString() },
+    { code: 'OFFER_EDIT', name: 'Edit Offers', category: 'Marketing', description: 'Edit consumer offers and vouchers', created_at: new Date().toISOString() },
+    { code: 'OFFER_DELETE', name: 'Delete Offers', category: 'Marketing', description: 'Delete consumer offers and vouchers', created_at: new Date().toISOString() },
+    { code: 'OFFER_ACTIVATE', name: 'Activate Offers', category: 'Marketing', description: 'Activate consumer offers and vouchers', created_at: new Date().toISOString() },
+    { code: 'OFFER_DEACTIVATE', name: 'Deactivate Offers', category: 'Marketing', description: 'Deactivate consumer offers and vouchers', created_at: new Date().toISOString() },
     { code: 'SERVICE_VIEW', name: 'View Services', category: 'Catalog', description: 'Browse service rates and scope', created_at: new Date().toISOString() },
     { code: 'SERVICE_CREATE', name: 'Create Services', category: 'Catalog', description: 'Publish new services and categories', created_at: new Date().toISOString() },
     { code: 'SERVICE_UPDATE', name: 'Update Services', category: 'Catalog', description: 'Edit service pricing and inclusions', created_at: new Date().toISOString() },
@@ -814,6 +1015,7 @@ class MemoryStore {
   public salaryStructures: SalaryStructureRecord[] = [...INITIAL_SALARY_STRUCTURES];
   public payrollRuns: PayrollRunRecord[] = [...INITIAL_PAYROLL_RUNS];
   public payslips: PayslipRecord[] = [...INITIAL_PAYSLIPS];
+  public promotions: PromotionRecord[] = [...INITIAL_PROMOTIONS];
 
   public leads: LeadRecord[] = [
     {
@@ -1543,6 +1745,7 @@ class MemoryStore {
         { table_name: 'sales_profiles' },
         { table_name: 'finance_profiles' },
         { table_name: 'audit_logs' },
+        { table_name: 'promotions' },
       ];
       return { rows: tables as any, rowCount: tables.length };
     }
@@ -1874,6 +2077,22 @@ class MemoryStore {
     // 20. Partners
     if (/FROM partners/i.test(cleanSql)) {
       const active = this.partners.filter((p) => !p.deleted_at);
+      return { rows: active as any, rowCount: active.length };
+    }
+
+    // 21. Promotions & Offers
+    if (/FROM promotions/i.test(cleanSql)) {
+      const active = this.promotions.filter((p) => !p.deleted_at);
+      if (/WHERE.*id = \$1/i.test(cleanSql)) {
+        const id = String(params[0]);
+        const promo = active.find((p) => p.id === id);
+        return { rows: promo ? ([promo] as any) : [], rowCount: promo ? 1 : 0 };
+      }
+      if (/WHERE.*code = \$1/i.test(cleanSql)) {
+        const code = String(params[0]).toUpperCase().trim();
+        const promo = active.find((p) => p.code.toUpperCase() === code);
+        return { rows: promo ? ([promo] as any) : [], rowCount: promo ? 1 : 0 };
+      }
       return { rows: active as any, rowCount: active.length };
     }
 

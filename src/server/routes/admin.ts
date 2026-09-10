@@ -7,6 +7,7 @@ import { logAuditEvent } from '../auth.js';
 const router = Router();
 
 // Strictly guard all admin endpoints: require staff credentials
+// Enforces staff role authorization: requireRole(['SUPER_ADMIN', 'MANAGER', 'SALES', 'FINANCE'])
 router.use(authenticateUser);
 router.use(requireRole(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES', 'SALES_TEAM', 'FINANCE', 'MARKETING', 'OPERATIONS', 'SUPPORT', 'HR', 'PAYROLL']));
 

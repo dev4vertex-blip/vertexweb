@@ -542,6 +542,53 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  // ==========================================
+  // Promotions & Offers Endpoints
+  // ==========================================
+
+  async getPromotions(params?: { search?: string; status?: string; type?: string; category?: string }): Promise<{ success: boolean; data: any[]; meta?: any }> {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status) query.append('status', params.status);
+    if (params?.type) query.append('type', params.type);
+    if (params?.category) query.append('category', params.category);
+
+    const qs = query.toString();
+    const endpoint = `/api/v1/promotions${qs ? `?${qs}` : ''}`;
+    return this.request<{ success: boolean; data: any[]; meta?: any }>(endpoint);
+  }
+
+  async getPromotion(id: string): Promise<{ success: boolean; data: any }> {
+    return this.request<{ success: boolean; data: any }>(`/api/v1/promotions/${id}`);
+  }
+
+  async createPromotion(data: any): Promise<{ success: boolean; data: any; message: string }> {
+    return this.request<{ success: boolean; data: any; message: string }>('/api/v1/promotions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updatePromotion(id: string, data: any): Promise<{ success: boolean; data: any; message: string }> {
+    return this.request<{ success: boolean; data: any; message: string }>(`/api/v1/promotions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updatePromotionStatus(id: string, status: string): Promise<{ success: boolean; data: any; message: string }> {
+    return this.request<{ success: boolean; data: any; message: string }>(`/api/v1/promotions/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async deletePromotion(id: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>(`/api/v1/promotions/${id}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const api = new ApiService();

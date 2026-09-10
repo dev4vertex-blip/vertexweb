@@ -9,6 +9,7 @@ import { AdminCustomersView } from './AdminCustomersView';
 import { AdminTechniciansView } from './AdminTechniciansView';
 import { UserManagementView } from './users/UserManagementView';
 import { AdminLeadsView } from './leads/AdminLeadsView';
+import { AdminPromotionsView } from './promotions/AdminPromotionsView';
 import { AdminGenericSectionView } from './AdminGenericSectionView';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -586,13 +587,16 @@ export const AdminPlatform: React.FC = () => {
 
                 {(activeSection === 'crm' || activeSection === 'leads') && <AdminLeadsView />}
 
+                {activeSection === 'promotions' && <AdminPromotionsView />}
+
                 {activeSection !== 'dashboard' &&
                   activeSection !== 'users' &&
                   activeSection !== 'bookings' &&
                   activeSection !== 'customers' &&
                   activeSection !== 'technicians' &&
                   activeSection !== 'crm' &&
-                  activeSection !== 'leads' && (
+                  activeSection !== 'leads' &&
+                  activeSection !== 'promotions' && (
                     <AdminGenericSectionView
                       sectionKey={activeSection}
                       title={getSectionTitle(activeSection)}

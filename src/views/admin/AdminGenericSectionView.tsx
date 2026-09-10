@@ -10,6 +10,7 @@ import { useApp } from '../../context/AppContext';
 import { auditService } from '../../auth/audit';
 import { api } from '../../services/api';
 import { AdminLeadsView } from './leads/AdminLeadsView';
+import { AdminPromotionsView } from './promotions/AdminPromotionsView';
 import {
   Search,
   Plus,
@@ -106,15 +107,17 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   const { addToast } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Service Master RBAC Permissions (Super Admin has unconditional access)
-  const canCreateService = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_CREATE') || hasPermission('SERVICE_MANAGE');
-  const canEditService = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_EDIT') || hasPermission('SERVICE_UPDATE') || hasPermission('SERVICE_MANAGE');
-  const canDeleteService = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_DELETE') || hasPermission('SERVICE_MANAGE');
-  const canToggleServiceStatus = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_ACTIVATE') || hasPermission('SERVICE_DEACTIVATE') || hasPermission('SERVICE_EDIT') || hasPermission('SERVICE_MANAGE');
-  const canEditServicePrice = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_PRICE_EDIT') || hasPermission('SERVICE_EDIT') || hasPermission('SERVICE_MANAGE');
+  // Service Master RBAC Permissions precisely synchronized with server-side authorization
+  const canCreateService = hasPermission('SERVICE_CREATE');
+  const canEditService = hasPermission('SERVICE_EDIT');
+  const canDeleteService = hasPermission('SERVICE_DELETE');
+  const canActivateService = hasPermission('SERVICE_ACTIVATE');
+  const canDeactivateService = hasPermission('SERVICE_DEACTIVATE');
+  const canToggleServiceStatus = canActivateService || canDeactivateService;
+  const canEditServicePrice = hasPermission('SERVICE_PRICE_EDIT');
 
-  // Category Master RBAC Permissions (Super Admin has unconditional access)
-  const canManageCategories = user?.role === 'SUPER_ADMIN' || hasPermission('SERVICE_CATEGORY_MANAGE') || hasPermission('CATEGORY_MANAGE') || hasPermission('SERVICE_MANAGE');
+  // Category Master RBAC Permissions precisely synchronized with server-side authorization
+  const canManageCategories = hasPermission('SERVICE_CATEGORY_MANAGE') || hasPermission('CATEGORY_MANAGE');
 
   // Live data fetched from RBAC endpoints
   const [liveServices, setLiveServices] = useState<any[]>([]);
@@ -720,7 +723,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
       }
 
       case 'services': {
-        const canAnyServiceAction = canEditService || canDeleteService || canToggleServiceStatus;
+        const canAnyServiceAction = canEditService || canDeleteService || canActivateService || canDeactivateService;
         const displayCategoriesList = liveCategories.length > 0 ? liveCategories : [
           { id: 1, name: 'AC Service & Repair' },
           { id: 2, name: 'Electrician Services' },
@@ -816,7 +819,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                       {canAnyServiceAction && (
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {canToggleServiceStatus && (
+                            {((s.status === 'Live' && canDeactivateService) || (s.status !== 'Live' && canActivateService)) && (
                               <Button
                                 id={`btn-toggle-status-${s.id}`}
                                 size="xs"
@@ -1165,64 +1168,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
         return <AdminLeadsView />;
 
       case 'promotions':
-        return (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Active Coupons</span>
-                <div className="text-2xl font-black text-slate-900 mt-1">6 Codes</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Total Redemptions</span>
-                <div className="text-2xl font-black text-emerald-600 mt-1">1,420 Uses</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Discounts Distributed</span>
-                <div className="text-2xl font-black text-blue-600 mt-1">₹2,84,000</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs uppercase font-bold text-slate-400">Avg Basket Lift</span>
-                <div className="text-2xl font-black text-purple-600 mt-1">+24.5%</div>
-              </Card>
-            </div>
-
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Coupon Code</TableHead>
-                  <TableHead>Campaign Name</TableHead>
-                  <TableHead>Discount Value</TableHead>
-                  <TableHead>Min Order</TableHead>
-                  <TableHead>Usage Count</TableHead>
-                  <TableHead>Valid Until</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[
-                  { code: 'VERTEXFIRST', campaign: 'New Customer Welcome', val: '₹150 OFF', min: '₹499', uses: '840 / 1000', exp: '31 Dec 2026', st: 'Active' },
-                  { code: 'ACCHILL20', campaign: 'Summer AC Festival', val: '20% OFF (Max ₹300)', min: '₹799', uses: '412 / 500', exp: '30 Oct 2026', st: 'Active' },
-                  { code: 'AMCSHIELD500', campaign: 'Annual Contract Special', val: '₹500 Flat OFF', min: '₹3,999', uses: '128 / 200', exp: '15 Nov 2026', st: 'Active' },
-                  { code: 'HOMESAFE10', campaign: 'Electrical Safety Drive', val: '10% OFF', min: '₹350', uses: '40 / 100', exp: '20 Sep 2026', st: 'Expiring Soon' },
-                ].map((promo, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono font-bold text-xs text-blue-600 bg-blue-50/50 px-2 py-1 rounded w-fit">{promo.code}</TableCell>
-                    <TableCell className="font-bold text-slate-900">{promo.campaign}</TableCell>
-                    <TableCell className="font-extrabold text-emerald-600">{promo.val}</TableCell>
-                    <TableCell>{promo.min}</TableCell>
-                    <TableCell className="font-medium text-slate-700">{promo.uses}</TableCell>
-                    <TableCell>{promo.exp}</TableCell>
-                    <TableCell>
-                      <Badge variant={promo.st === 'Active' ? 'success' : 'warning'} size="sm">
-                        {promo.st}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        );
+        return <AdminPromotionsView />;
 
       case 'partners':
         return (
@@ -1778,23 +1724,29 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Base Starting Price (₹)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Base Starting Price (₹) {!canEditServicePrice && <span className="text-amber-600 font-normal ml-1">(Read-only)</span>}
+              </label>
               <Input
                 id="edit-service-base-price"
                 type="number"
                 min={0}
                 required
+                disabled={!canEditServicePrice}
                 value={serviceForm.base_price}
                 onChange={(e) => setServiceForm({ ...serviceForm, base_price: Number(e.target.value) })}
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Strike-through Price (₹)</label>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Strike-through Price (₹) {!canEditServicePrice && <span className="text-amber-600 font-normal ml-1">(Read-only)</span>}
+              </label>
               <Input
                 id="edit-service-strike-price"
                 type="number"
                 min={0}
+                disabled={!canEditServicePrice}
                 value={serviceForm.strike_price}
                 onChange={(e) => setServiceForm({ ...serviceForm, strike_price: Number(e.target.value) })}
               />

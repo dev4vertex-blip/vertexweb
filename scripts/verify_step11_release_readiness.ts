@@ -359,6 +359,9 @@ async function runStep11Suite() {
     'Matched'
   );
 
+  // Restore Customer mobile baseline
+  execSync('npx tsx scripts/prepare_mobile.ts --target=customer --platform=all', { stdio: 'pipe' });
+
   // ---------------------------------------------------------------------------
   // 9. DEMO LOGIN PRODUCTION MODE GATING & REJECTION
   // ---------------------------------------------------------------------------

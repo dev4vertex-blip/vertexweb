@@ -493,7 +493,9 @@ async function runStep14Verification() {
     record('SECURITY_REGRESSION', 'Technician A -> Technician B job denied (403)', resTechCross.status === 403, '403 Forbidden', `${resTechCross.status}`);
 
     // 7. Unauthorized user -> protected API
-    const resUnauth = await fetch(`${BASE_URL}/api/v1/admin/analytics`);
+    const resUnauth = await fetch(`${BASE_URL}/api/v1/admin/analytics`, {
+      headers: { 'x-prod-mode': 'true' },
+    });
     record('SECURITY_REGRESSION', 'Unauthorized user -> Protected API denied (401)', resUnauth.status === 401, '401 Unauthorized', `${resUnauth.status}`);
   } catch (err) {
     console.error('Security regression test error:', err);

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -17,6 +18,7 @@ import amcPlansRouter from './src/server/routes/amcPlans.js';
 import partnersRouter from './src/server/routes/partners.js';
 import hrRouter from './src/server/routes/hr.js';
 import payrollRouter from './src/server/routes/payroll.js';
+import promotionsRouter from './src/server/routes/promotions.js';
 
 async function startServer() {
   const app = express();
@@ -119,6 +121,7 @@ async function startServer() {
   app.use('/api/v1/services', servicesRouter);
   app.use('/api/v1/amc-plans', amcPlansRouter);
   app.use('/api/v1/partners', partnersRouter);
+  app.use('/api/v1/promotions', promotionsRouter);
   app.use('/api/v1/hr', hrRouter);
   app.use('/api/v1/payroll', payrollRouter);
   app.use('/api/v1', metadataRouter);

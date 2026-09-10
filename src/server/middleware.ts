@@ -15,13 +15,13 @@ export async function authenticateUser(req: AuthenticatedRequest, res: Response,
     let token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
 
     if (!token) {
+      const demoRole = req.headers['x-demo-role'] as string;
       const demoAllowed =
         process.env.NODE_ENV !== 'production' ||
         process.env.DEMO_LOGIN_ENABLED === 'true' ||
         process.env.VITE_DEMO_LOGIN_ENABLED === 'true';
 
-      if (demoAllowed && req.headers['x-prod-mode'] !== 'true' && req.headers['x-test-production'] !== 'true') {
-        const demoRole = (req.headers['x-demo-role'] as string) || 'SUPER_ADMIN';
+      if (demoRole && demoAllowed && req.headers['x-prod-mode'] !== 'true' && req.headers['x-test-production'] !== 'true') {
         const demoUserId = demoRole === 'SALES' ? 'usr-sales-1' : demoRole === 'MANAGER' ? 'usr-mgr-1' : 'usr-admin-1';
         const user = await getFullUserById(demoUserId);
         if (user) {
@@ -182,6 +182,20 @@ const PERMISSION_ALIASES: Record<string, string[]> = {
   AMC_PLAN_BENEFIT_EDIT: ['AMC_PLAN_EDIT', 'AMC_MANAGE'],
   PARTNER_COMMISSION_VIEW: ['COMMISSION_VIEW', 'COMMISSION_MANAGE'],
   PARTNER_COMMISSION_EDIT: ['COMMISSION_UPDATE', 'COMMISSION_MANAGE'],
+  PROMOTION_VIEW: ['PROMOTION_MANAGE', 'MARKETING_MANAGE'],
+  PROMOTION_UPDATE: ['PROMOTION_EDIT', 'PROMOTION_MANAGE', 'MARKETING_MANAGE'],
+  PROMOTION_EDIT: ['PROMOTION_UPDATE', 'PROMOTION_MANAGE', 'MARKETING_MANAGE'],
+  PROMOTION_CREATE: ['PROMOTION_MANAGE', 'MARKETING_MANAGE'],
+  PROMOTION_DELETE: ['PROMOTION_MANAGE', 'MARKETING_MANAGE'],
+  PROMOTION_ACTIVATE: ['PROMOTION_EDIT', 'PROMOTION_MANAGE', 'MARKETING_MANAGE'],
+  PROMOTION_DEACTIVATE: ['PROMOTION_EDIT', 'PROMOTION_MANAGE', 'MARKETING_MANAGE'],
+  PROMOTION_MANAGE: ['MARKETING_MANAGE'],
+  OFFER_VIEW: ['PROMOTION_VIEW', 'PROMOTION_MANAGE'],
+  OFFER_CREATE: ['PROMOTION_CREATE', 'PROMOTION_MANAGE'],
+  OFFER_EDIT: ['PROMOTION_EDIT', 'PROMOTION_MANAGE'],
+  OFFER_DELETE: ['PROMOTION_DELETE', 'PROMOTION_MANAGE'],
+  OFFER_ACTIVATE: ['PROMOTION_ACTIVATE', 'PROMOTION_MANAGE'],
+  OFFER_DEACTIVATE: ['PROMOTION_DEACTIVATE', 'PROMOTION_MANAGE'],
 };
 
 function hasUserPermission(userPermissions: string[] | undefined, permissionCode: string): boolean {

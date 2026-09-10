@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../../db/client.js';
+import { memoryStore } from '../../db/memoryStore.js';
 import { authenticateUser, AuthenticatedRequest, requireRole } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 import { bookingRateLimiter } from '../rateLimiter.js';
@@ -383,52 +384,19 @@ router.get('/subscriptions', async (req: AuthenticatedRequest, res) => {
  */
 router.get('/offers', async (_req: AuthenticatedRequest, res) => {
   try {
-    const offers = [
-      {
-        id: 'off-1',
-        code: 'VERTEXNEW',
-        title: 'Flat ₹100 Off on First Service',
-        description: 'Valid across all home repair categories for new customers',
-        discountType: 'FLAT',
-        discountValue: 100,
-        minBookingAmount: 299,
-        validUntil: '2026-12-31',
-        category: 'All',
-      },
-      {
-        id: 'off-2',
-        code: 'SUMMERCOOL',
-        title: '15% Off AC Power Jet Service',
-        description: 'Complete dual unit foam wash and antibacterial sanitize',
-        discountType: 'PERCENTAGE',
-        discountValue: 15,
-        minBookingAmount: 499,
-        validUntil: '2026-10-31',
-        category: 'AC & Cooling',
-      },
-      {
-        id: 'off-3',
-        code: 'AMCPROTECT',
-        title: '₹500 Off Any Annual Maintenance Plan',
-        description: 'Comprehensive year-round coverage with free scheduled visits',
-        discountType: 'FLAT',
-        discountValue: 500,
-        minBookingAmount: 2499,
-        validUntil: '2026-12-31',
-        category: 'AMC',
-      },
-      {
-        id: 'off-4',
-        code: 'FESTIVE20',
-        title: '20% Off Electrical & Plumbing Overhaul',
-        description: 'Inspect switchboards, earthing, or complete concealed leak check',
-        discountType: 'PERCENTAGE',
-        discountValue: 20,
-        minBookingAmount: 399,
-        validUntil: '2026-11-15',
-        category: 'Repairs',
-      },
-    ];
+    const activePromos = memoryStore.promotions.filter((p) => !p.deleted_at && p.status === 'ACTIVE');
+
+    const offers = activePromos.map((p) => ({
+      id: p.id,
+      code: p.code,
+      title: p.name,
+      description: p.description || (p.discount_type === 'FIXED' ? `Flat ₹${p.discount_value} Off` : `${p.discount_value}% Off`),
+      discountType: p.discount_type === 'FIXED' ? 'FLAT' : 'PERCENTAGE',
+      discountValue: p.discount_value,
+      minBookingAmount: p.min_order_value || 0,
+      validUntil: p.end_date || '2026-12-31',
+      category: Array.isArray(p.applicable_categories) ? p.applicable_categories[0] : (p.applicable_categories || 'All'),
+    }));
 
     return res.json({
       success: true,
@@ -450,11 +418,52 @@ router.post('/offers/validate', async (req: AuthenticatedRequest, res) => {
     const cleanCode = String(code || '').toUpperCase().trim();
     const numAmount = Number(amount) || 0;
 
-    const promoMap: Record<string, { type: 'FLAT' | 'PERCENTAGE'; value: number; min: number }> = {
+    // Check memoryStore first
+    const activePromo = memoryStore.promotions.find(
+      (p) => !p.deleted_at && p.status === 'ACTIVE' && p.code.toUpperCase() === cleanCode
+    );
+
+    if (activePromo) {
+      if (numAmount < (activePromo.min_order_value || 0)) {
+        return res.status(400).json({
+          success: false,
+          error: `Coupon requires a minimum booking value of ₹${activePromo.min_order_value}`,
+        });
+      }
+
+      let discount = 0;
+      if (activePromo.discount_type === 'FIXED') {
+        discount = activePromo.discount_value;
+      } else {
+        discount = Math.round((numAmount * activePromo.discount_value) / 100);
+        if (activePromo.max_discount && discount > activePromo.max_discount) {
+          discount = activePromo.max_discount;
+        }
+      }
+
+      const finalAmount = Math.max(0, numAmount - discount);
+
+      return res.json({
+        success: true,
+        data: {
+          code: cleanCode,
+          discountAmount: discount,
+          originalAmount: numAmount,
+          finalAmount,
+        },
+      });
+    }
+
+    // Fallback dictionary for legacy codes
+    const promoMap: Record<string, { type: 'FLAT' | 'PERCENTAGE'; value: number; min: number; max?: number }> = {
       VERTEXNEW: { type: 'FLAT', value: 100, min: 299 },
+      VERTEXFIRST: { type: 'FLAT', value: 150, min: 499 },
       SUMMERCOOL: { type: 'PERCENTAGE', value: 15, min: 499 },
+      ACCHILL20: { type: 'PERCENTAGE', value: 20, min: 799, max: 300 },
       AMCPROTECT: { type: 'FLAT', value: 500, min: 2499 },
+      AMCSHIELD500: { type: 'FLAT', value: 500, min: 2499 },
       FESTIVE20: { type: 'PERCENTAGE', value: 20, min: 399 },
+      HOMESAFE10: { type: 'PERCENTAGE', value: 10, min: 350 },
     };
 
     const promo = promoMap[cleanCode];
@@ -469,7 +478,10 @@ router.post('/offers/validate', async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    const discount = promo.type === 'FLAT' ? promo.value : Math.round((numAmount * promo.value) / 100);
+    let discount = promo.type === 'FLAT' ? promo.value : Math.round((numAmount * promo.value) / 100);
+    if (promo.max && discount > promo.max) {
+      discount = promo.max;
+    }
     const finalAmount = Math.max(0, numAmount - discount);
 
     return res.json({

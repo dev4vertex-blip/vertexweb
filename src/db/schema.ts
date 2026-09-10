@@ -311,3 +311,35 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     references: [financeProfiles.userId],
   }),
 }));
+
+// ----------------------------------------------------
+// PROMOTIONS & OFFERS
+// ----------------------------------------------------
+export const promotions = pgTable('promotions', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  code: text('code').notNull().unique(),
+  description: text('description'),
+  promotionType: text('promotion_type').default('PERCENTAGE').notNull(),
+  discountType: text('discount_type').default('PERCENTAGE').notNull(),
+  discountValue: numeric('discount_value').notNull(),
+  minOrderValue: numeric('min_order_value').default('0'),
+  maxDiscount: numeric('max_discount'),
+  startDate: text('start_date'),
+  startTime: text('start_time'),
+  endDate: text('end_date'),
+  endTime: text('end_time'),
+  applicableCategories: text('applicable_categories'),
+  applicableServices: text('applicable_services'),
+  customerSegment: text('customer_segment').default('ALL'),
+  usageLimit: integer('usage_limit').default(1000),
+  usageCount: integer('usage_count').default(0),
+  perCustomerLimit: integer('per_customer_limit').default(1),
+  status: text('status').default('ACTIVE').notNull(),
+  termsAndConditions: text('terms_and_conditions'),
+  createdBy: text('created_by').default('SUPER_ADMIN'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at'),
+});
+

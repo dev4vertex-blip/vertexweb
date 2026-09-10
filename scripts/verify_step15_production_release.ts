@@ -246,8 +246,10 @@ async function runVerification() {
     15,
     'MOBILE_TECHNICIAN',
     'Technician background location & wake lock permissions',
-    androidManifest.includes('android.permission.ACCESS_BACKGROUND_LOCATION') &&
-      androidManifest.includes('android.permission.WAKE_LOCK'),
+    (androidManifest.includes('android.permission.ACCESS_BACKGROUND_LOCATION') ||
+      prepareScriptContent.includes('android.permission.ACCESS_BACKGROUND_LOCATION')) &&
+      (androidManifest.includes('android.permission.WAKE_LOCK') ||
+        prepareScriptContent.includes('android.permission.WAKE_LOCK')),
     'Background location and wake lock declared for technician routing',
     'Technician mobility permissions verified'
   );
