@@ -210,6 +210,52 @@ export async function runMigrations() {
     CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);
     CREATE INDEX IF NOT EXISTS idx_lead_followups_lead_id ON lead_followups(lead_id);
     CREATE INDEX IF NOT EXISTS idx_lead_followups_scheduled ON lead_followups(scheduled_date, status);
+
+    -- Ensure canonical location columns on cities table
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS code TEXT;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'India';
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS city TEXT;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS area TEXT;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS pincode TEXT;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS latitude REAL;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS longitude REAL;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS description TEXT;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ACTIVE';
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS created_by TEXT;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    ALTER TABLE cities ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+
+    CREATE INDEX IF NOT EXISTS idx_cities_code ON cities(code);
+    CREATE INDEX IF NOT EXISTS idx_cities_status ON cities(status);
+    CREATE INDEX IF NOT EXISTS idx_cities_active ON cities(active);
+
+    -- Canonical locations view for seamless SQL query resolution
+    CREATE OR REPLACE VIEW locations AS
+    SELECT 
+      c.id,
+      c.name,
+      c.code,
+      c.country,
+      c.state_id,
+      s.name AS state_name,
+      s.code AS state_code,
+      c.city,
+      c.area,
+      c.pincode,
+      c.address,
+      c.latitude,
+      c.longitude,
+      c.description,
+      c.tier,
+      c.active,
+      c.status,
+      c.created_by,
+      c.created_at,
+      c.updated_at,
+      c.deleted_at
+    FROM cities c
+    LEFT JOIN states s ON c.state_id = s.id;
   `;
 
   await client.exec(migrationSQL);

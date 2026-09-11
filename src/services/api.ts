@@ -7,6 +7,8 @@ import {
   RoleItem,
   DepartmentItem,
   DesignationItem,
+  LocationItem,
+  LocationFormData,
 } from '../types/auth';
 import { secureStorage } from './storage';
 
@@ -200,6 +202,54 @@ class ApiService {
   async getCities(): Promise<CityItem[]> {
     const res = await this.request<{ success: boolean; data: CityItem[] }>('/api/v1/cities');
     return res.data;
+  }
+
+  // --- Location Management Endpoints ---
+  async getLocations(params?: { search?: string; status?: string; state?: string }): Promise<{ success: boolean; data: LocationItem[]; total: number; available_states: any[] }> {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status) query.append('status', params.status);
+    if (params?.state) query.append('state', params.state);
+
+    const qs = query.toString();
+    const endpoint = `/api/v1/locations${qs ? `?${qs}` : ''}`;
+    return this.request<{ success: boolean; data: LocationItem[]; total: number; available_states: any[] }>(endpoint);
+  }
+
+  async getLocation(id: number | string): Promise<{ success: boolean; data: LocationItem }> {
+    return this.request<{ success: boolean; data: LocationItem }>(`/api/v1/locations/${id}`);
+  }
+
+  async createLocation(data: LocationFormData): Promise<{ success: boolean; message: string; data: LocationItem }> {
+    return this.request<{ success: boolean; message: string; data: LocationItem }>('/api/v1/locations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateLocation(id: number | string, data: Partial<LocationFormData> & { status?: string; active?: boolean }): Promise<{ success: boolean; message: string; data: LocationItem }> {
+    return this.request<{ success: boolean; message: string; data: LocationItem }>(`/api/v1/locations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async activateLocation(id: number | string): Promise<{ success: boolean; message: string; data: LocationItem }> {
+    return this.request<{ success: boolean; message: string; data: LocationItem }>(`/api/v1/locations/${id}/activate`, {
+      method: 'POST',
+    });
+  }
+
+  async deactivateLocation(id: number | string): Promise<{ success: boolean; message: string; data: LocationItem }> {
+    return this.request<{ success: boolean; message: string; data: LocationItem }>(`/api/v1/locations/${id}/deactivate`, {
+      method: 'POST',
+    });
+  }
+
+  async deleteLocation(id: number | string): Promise<{ success: boolean; action: 'DELETED' | 'ARCHIVED'; message: string; data?: any }> {
+    return this.request<{ success: boolean; action: 'DELETED' | 'ARCHIVED'; message: string; data?: any }>(`/api/v1/locations/${id}`, {
+      method: 'DELETE',
+    });
   }
 
   async getRoles(): Promise<RoleItem[]> {

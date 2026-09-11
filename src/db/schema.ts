@@ -17,11 +17,27 @@ export const states = pgTable('states', {
 export const cities = pgTable('cities', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
+  code: text('code'),
+  country: text('country').default('India'),
   stateId: integer('state_id').references(() => states.id).notNull(),
+  city: text('city'),
+  area: text('area'),
+  pincode: text('pincode'),
+  address: text('address'),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+  description: text('description'),
   tier: integer('tier').default(1).notNull(), // Tier 1, Tier 2
   active: boolean('active').default(true).notNull(),
+  status: text('status').default('ACTIVE'),
+  createdBy: text('created_by'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+  deletedAt: timestamp('deleted_at'),
 });
+
+// Alias for canonical locations table
+export const locations = cities;
 
 // ----------------------------------------------------
 // 3. ROLES

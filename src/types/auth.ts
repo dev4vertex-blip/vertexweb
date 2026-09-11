@@ -89,6 +89,12 @@ export type PermissionKey =
   | 'CATEGORY_MANAGE'
   | 'LOCATION_VIEW'
   | 'LOCATION_MANAGE'
+  | 'LOCATION_CREATE'
+  | 'LOCATION_EDIT'
+  | 'LOCATION_UPDATE'
+  | 'LOCATION_DELETE'
+  | 'LOCATION_ACTIVATE'
+  | 'LOCATION_DEACTIVATE'
   | 'PROMOTION_VIEW'
   | 'PROMOTION_CREATE'
   | 'PROMOTION_EDIT'
@@ -287,7 +293,14 @@ export type ActionKey =
   | 'OFFER_EDIT'
   | 'OFFER_DELETE'
   | 'OFFER_ACTIVATE'
-  | 'OFFER_DEACTIVATE';
+  | 'OFFER_DEACTIVATE'
+  | 'LOCATION_VIEW'
+  | 'LOCATION_CREATE'
+  | 'LOCATION_EDIT'
+  | 'LOCATION_DELETE'
+  | 'LOCATION_ACTIVATE'
+  | 'LOCATION_DEACTIVATE'
+  | 'LOCATION_MANAGE';
 
 export interface AuthUser {
   id: string;
@@ -331,12 +344,65 @@ export interface UserListItem {
 export interface CityItem {
   id: number;
   name: string;
+  code?: string;
+  country?: string;
   state_id?: number;
   stateId?: number;
   tier: number;
   active?: boolean;
   state_name?: string;
   state_code?: string;
+  city?: string;
+  area?: string;
+  pincode?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  description?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface LocationItem {
+  id: number;
+  name: string;
+  code: string;
+  country: string;
+  state_id: number;
+  state_name?: string;
+  state_code?: string;
+  city: string;
+  area?: string;
+  pincode?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  description?: string;
+  tier: number;
+  active: boolean;
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  created_by?: string | null;
+  created_at: string;
+  updated_at?: string;
+  usage_count?: number;
+}
+
+export interface LocationFormData {
+  name: string;
+  code: string;
+  country?: string;
+  state_id: number;
+  city?: string;
+  area?: string;
+  pincode?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  description?: string;
+  tier?: number;
+  status?: 'ACTIVE' | 'INACTIVE';
 }
 
 export interface RoleItem {
@@ -375,7 +441,12 @@ export type AuditActionType =
   | 'ROLE_CHANGED'
   | 'PERMISSION_CHANGED'
   | 'UNAUTHORIZED_ACCESS_ATTEMPT'
-  | 'SETTINGS_CHANGED';
+  | 'SETTINGS_CHANGED'
+  | 'LOCATION_CREATED'
+  | 'LOCATION_UPDATED'
+  | 'LOCATION_DELETED'
+  | 'LOCATION_ACTIVATED'
+  | 'LOCATION_DEACTIVATED';
 
 export interface AuditLogEntry {
   id: string;

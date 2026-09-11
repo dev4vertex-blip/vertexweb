@@ -56,12 +56,25 @@ export interface StateRecord {
 export interface CityRecord {
   id: number;
   name: string;
+  code?: string;
+  country?: string;
   state_id: number;
   tier: number;
   active: boolean;
   state_name?: string;
   state_code?: string;
+  city?: string;
+  area?: string;
+  pincode?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  description?: string;
+  status?: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  created_by?: string | null;
   created_at: string;
+  updated_at?: string;
+  deleted_at?: string | null;
 }
 
 export interface RoleRecord {
@@ -467,14 +480,182 @@ class MemoryStore {
   ];
 
   public cities: CityRecord[] = [
-    { id: 1, name: 'Delhi', state_id: 1, tier: 1, active: true, state_name: 'Delhi', state_code: 'DL', created_at: new Date().toISOString() },
-    { id: 2, name: 'Gurgaon', state_id: 2, tier: 1, active: true, state_name: 'Haryana', state_code: 'HR', created_at: new Date().toISOString() },
-    { id: 3, name: 'Noida', state_id: 3, tier: 1, active: true, state_name: 'Uttar Pradesh', state_code: 'UP', created_at: new Date().toISOString() },
-    { id: 4, name: 'Mumbai', state_id: 4, tier: 1, active: true, state_name: 'Maharashtra', state_code: 'MH', created_at: new Date().toISOString() },
-    { id: 5, name: 'Bangalore', state_id: 5, tier: 1, active: true, state_name: 'Karnataka', state_code: 'KA', created_at: new Date().toISOString() },
-    { id: 6, name: 'Pune', state_id: 4, tier: 1, active: true, state_name: 'Maharashtra', state_code: 'MH', created_at: new Date().toISOString() },
-    { id: 7, name: 'Chennai', state_id: 6, tier: 1, active: true, state_name: 'Tamil Nadu', state_code: 'TN', created_at: new Date().toISOString() },
-    { id: 8, name: 'Kolkata', state_id: 7, tier: 1, active: true, state_name: 'West Bengal', state_code: 'WB', created_at: new Date().toISOString() },
+    {
+      id: 1,
+      name: 'Delhi NCR Hub',
+      code: 'DEL-CENTRAL',
+      country: 'India',
+      state_id: 1,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'Delhi',
+      state_code: 'DL',
+      city: 'Delhi',
+      area: 'Connaught Place & Central NCR',
+      pincode: '110001',
+      address: 'Barakhamba Road, Connaught Place',
+      latitude: 28.6304,
+      longitude: 77.2177,
+      description: 'Primary Regional Super Hub for Central and South National Capital Region',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      name: 'Gurgaon Tech Hub',
+      code: 'GUR-CYBER',
+      country: 'India',
+      state_id: 2,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'Haryana',
+      state_code: 'HR',
+      city: 'Gurgaon',
+      area: 'Cyber City & DLF Phase 2',
+      pincode: '122002',
+      address: 'DLF Cyber City, Sector 24',
+      latitude: 28.4595,
+      longitude: 77.0266,
+      description: 'Corporate and High-Rise Commercial Appliance Operations Hub',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 3,
+      name: 'Noida Operations Center',
+      code: 'NOI-EXPR',
+      country: 'India',
+      state_id: 3,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'Uttar Pradesh',
+      state_code: 'UP',
+      city: 'Noida',
+      area: 'Sector 18 & Expressway Corridor',
+      pincode: '201301',
+      address: 'Sector 18 Commercial District',
+      latitude: 28.5708,
+      longitude: 77.3271,
+      description: 'Expressway Tech & Residential Operations Centre',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 4,
+      name: 'Mumbai Metro Command',
+      code: 'MUM-WEST',
+      country: 'India',
+      state_id: 4,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'Maharashtra',
+      state_code: 'MH',
+      city: 'Mumbai',
+      area: 'Bandra-Kurla Complex & Western Suburbs',
+      pincode: '400051',
+      address: 'G Block, Bandra Kurla Complex',
+      latitude: 19.0662,
+      longitude: 72.8682,
+      description: 'Western Financial Capital Super Hub',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 5,
+      name: 'Bangalore Innovation Hub',
+      code: 'BLR-CORR',
+      country: 'India',
+      state_id: 5,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'Karnataka',
+      state_code: 'KA',
+      city: 'Bangalore',
+      area: 'Koramangala & Outer Ring Road',
+      pincode: '560034',
+      address: '100 Feet Road, Koramangala 4th Block',
+      latitude: 12.9352,
+      longitude: 77.6245,
+      description: 'Silicon Valley South Operations Command',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 6,
+      name: 'Pune Industrial Hub',
+      code: 'PUN-CENT',
+      country: 'India',
+      state_id: 4,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'Maharashtra',
+      state_code: 'MH',
+      city: 'Pune',
+      area: 'Shivajinagar & Hinjewadi Phase 1',
+      pincode: '411005',
+      address: 'FC Road, Shivajinagar',
+      latitude: 18.5204,
+      longitude: 73.8567,
+      description: 'Industrial and Automotive Corridor Hub',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 7,
+      name: 'Chennai Coastal Center',
+      code: 'CHN-METRO',
+      country: 'India',
+      state_id: 6,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'Tamil Nadu',
+      state_code: 'TN',
+      city: 'Chennai',
+      area: 'Anna Nagar & OMR Tech Corridor',
+      pincode: '600040',
+      address: '2nd Avenue, Anna Nagar',
+      latitude: 13.0827,
+      longitude: 80.2707,
+      description: 'Tamil Nadu Coastal Hub & Logistics Yard',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 8,
+      name: 'Kolkata Eastern Hub',
+      code: 'KOL-EAST',
+      country: 'India',
+      state_id: 7,
+      tier: 1,
+      active: true,
+      status: 'ACTIVE',
+      state_name: 'West Bengal',
+      state_code: 'WB',
+      city: 'Kolkata',
+      area: 'Salt Lake Sector V & New Town',
+      pincode: '700091',
+      address: 'Block EP, Sector V, Salt Lake',
+      latitude: 22.5726,
+      longitude: 88.3639,
+      description: 'Eastern Regional Service Hub',
+      created_by: 'SUPER_ADMIN',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
   ];
 
   public roles: RoleRecord[] = [
@@ -580,7 +761,13 @@ class MemoryStore {
     { code: 'SERVICE_UPDATE', name: 'Update Services', category: 'Catalog', description: 'Edit service pricing and inclusions', created_at: new Date().toISOString() },
     { code: 'SERVICE_DELETE', name: 'Delete Services', category: 'Catalog', description: 'Archive obsolete service items', created_at: new Date().toISOString() },
     { code: 'LOCATION_VIEW', name: 'View Locations', category: 'Network', description: 'Browse states, hubs and active pincodes', created_at: new Date().toISOString() },
-    { code: 'LOCATION_MANAGE', name: 'Manage Locations', category: 'Network', description: 'Add or expand city service hubs', created_at: new Date().toISOString() },
+    { code: 'LOCATION_MANAGE', name: 'Manage Locations', category: 'Network', description: 'Full governance over city service hubs and network coverage', created_at: new Date().toISOString() },
+    { code: 'LOCATION_CREATE', name: 'Create Locations', category: 'Network', description: 'Commission new regional service hubs and coverage territories', created_at: new Date().toISOString() },
+    { code: 'LOCATION_EDIT', name: 'Edit Locations', category: 'Network', description: 'Modify location details, coordinates, and pincodes', created_at: new Date().toISOString() },
+    { code: 'LOCATION_UPDATE', name: 'Update Locations', category: 'Network', description: 'Update hub metadata and configuration', created_at: new Date().toISOString() },
+    { code: 'LOCATION_DELETE', name: 'Delete Locations', category: 'Network', description: 'Decommission or safely archive service locations', created_at: new Date().toISOString() },
+    { code: 'LOCATION_ACTIVATE', name: 'Activate Locations', category: 'Network', description: 'Mark hub active for customer bookings and technician dispatch', created_at: new Date().toISOString() },
+    { code: 'LOCATION_DEACTIVATE', name: 'Deactivate Locations', category: 'Network', description: 'Suspend or deactivate operational hubs', created_at: new Date().toISOString() },
     { code: 'AMC_VIEW', name: 'View AMCs', category: 'Contracts', description: 'Access Annual Maintenance Contracts', created_at: new Date().toISOString() },
     { code: 'AMC_CREATE', name: 'Create AMCs', category: 'Contracts', description: 'Create AMC contracts for clients', created_at: new Date().toISOString() },
     { code: 'AMC_EDIT', name: 'Edit AMCs', category: 'Contracts', description: 'Modify terms of AMC contracts', created_at: new Date().toISOString() },
@@ -1735,6 +1922,7 @@ class MemoryStore {
         { table_name: 'user_location_scopes' },
         { table_name: 'states' },
         { table_name: 'cities' },
+        { table_name: 'locations' },
         { table_name: 'services' },
         { table_name: 'bookings' },
         { table_name: 'leads' },
@@ -1765,8 +1953,8 @@ class MemoryStore {
       return { rows: [...this.states] as any, rowCount: this.states.length };
     }
 
-    // 4. SELECT cities
-    if (/SELECT c\.\*, s\.name as state_name/i.test(cleanSql) || /SELECT \* FROM cities/i.test(cleanSql)) {
+    // 4. SELECT cities / locations
+    if (/SELECT c\.\*, s\.name as state_name/i.test(cleanSql) || /SELECT \* FROM (cities|locations)/i.test(cleanSql)) {
       return { rows: [...this.cities] as any, rowCount: this.cities.length };
     }
 

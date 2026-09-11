@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { auditService } from '../../auth/audit';
 import { api } from '../../services/api';
+import { LocationItem, LocationFormData } from '../../types/auth';
 import { AdminLeadsView } from './leads/AdminLeadsView';
 import { AdminPromotionsView } from './promotions/AdminPromotionsView';
 import {
@@ -36,6 +37,10 @@ import {
   Tag,
   Wrench,
   Settings as SettingsIcon,
+  RefreshCw,
+  Navigation,
+  Building,
+  Globe,
 } from 'lucide-react';
 
 interface AdminGenericSectionViewProps {
@@ -119,6 +124,16 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   // Category Master RBAC Permissions precisely synchronized with server-side authorization
   const canManageCategories = hasPermission('SERVICE_CATEGORY_MANAGE') || hasPermission('CATEGORY_MANAGE');
 
+  // Location Master RBAC Permissions precisely synchronized with server-side authorization
+  const canViewLocations = hasPermission('LOCATION_VIEW');
+  const canManageLocations = hasPermission('LOCATION_MANAGE');
+  const canCreateLocation = hasPermission('LOCATION_CREATE') || canManageLocations;
+  const canEditLocation = hasPermission('LOCATION_EDIT') || canManageLocations;
+  const canDeleteLocation = hasPermission('LOCATION_DELETE') || canManageLocations;
+  const canActivateLocation = hasPermission('LOCATION_ACTIVATE') || canManageLocations;
+  const canDeactivateLocation = hasPermission('LOCATION_DEACTIVATE') || canManageLocations;
+  const canToggleLocationStatus = canActivateLocation || canDeactivateLocation;
+
   // Live data fetched from RBAC endpoints
   const [liveServices, setLiveServices] = useState<any[]>([]);
   const [liveCategories, setLiveCategories] = useState<any[]>([]);
@@ -128,6 +143,38 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   const [liveEmployees, setLiveEmployees] = useState<any[]>([]);
   const [livePayrollRuns, setLivePayrollRuns] = useState<any[]>([]);
   const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
+
+  // Location Live State
+  const [liveLocations, setLiveLocations] = useState<LocationItem[]>([]);
+  const [availableStates, setAvailableStates] = useState<any[]>([]);
+  const [locationFilterStatus, setLocationFilterStatus] = useState<string>('ALL');
+  const [locationFilterState, setLocationFilterState] = useState<string>('');
+  const [isLoadingLocations, setIsLoadingLocations] = useState<boolean>(false);
+
+  // Location Modals & Form State
+  const [isCreateLocationModalOpen, setIsCreateLocationModalOpen] = useState(false);
+  const [isEditLocationModalOpen, setIsEditLocationModalOpen] = useState(false);
+  const [isDeleteLocationConfirmOpen, setIsDeleteLocationConfirmOpen] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState<LocationItem | null>(null);
+  const [isSubmittingLocation, setIsSubmittingLocation] = useState(false);
+  const [locationFormError, setLocationFormError] = useState<string | null>(null);
+
+  const initialLocationForm: LocationFormData = {
+    name: '',
+    code: '',
+    country: 'India',
+    state_id: 1,
+    city: '',
+    area: '',
+    pincode: '',
+    address: '',
+    latitude: null,
+    longitude: null,
+    description: '',
+    tier: 1,
+    status: 'ACTIVE',
+  };
+  const [locationForm, setLocationForm] = useState<LocationFormData>(initialLocationForm);
 
   // Service modal & form state
   const [isCreateServiceModalOpen, setIsCreateServiceModalOpen] = useState(false);
@@ -192,6 +239,16 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
         } else if (sectionKey === 'payroll') {
           const res = await api.getPayrollRuns();
           if (isCurrent && Array.isArray(res)) setLivePayrollRuns(res);
+        } else if (sectionKey === 'locations') {
+          const res = await api.getLocations({
+            search: searchTerm,
+            status: locationFilterStatus,
+            state: locationFilterState,
+          }).catch(() => null);
+          if (isCurrent && res && res.success) {
+            setLiveLocations(res.data);
+            if (res.available_states) setAvailableStates(res.available_states);
+          }
         }
       } catch (e) {
         console.warn(`[AdminGenericSectionView] Failed to fetch data for ${sectionKey}:`, e);
@@ -205,6 +262,204 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
       isCurrent = false;
     };
   }, [sectionKey]);
+
+  // Dedicated Location fetcher responsive to search and filter updates
+  const fetchLocations = async () => {
+    setIsLoadingLocations(true);
+    try {
+      const res = await api.getLocations({
+        search: searchTerm,
+        status: locationFilterStatus,
+        state: locationFilterState,
+      });
+      if (res && res.success) {
+        setLiveLocations(res.data);
+        if (res.available_states) setAvailableStates(res.available_states);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch locations:', err);
+    } finally {
+      setIsLoadingLocations(false);
+    }
+  };
+
+  useEffect(() => {
+    if (sectionKey === 'locations') {
+      fetchLocations();
+    }
+  }, [sectionKey, searchTerm, locationFilterStatus, locationFilterState]);
+
+  // Location Management Handlers
+  const handleOpenCreateLocationModal = () => {
+    setLocationForm({
+      ...initialLocationForm,
+      state_id: availableStates.length > 0 ? availableStates[0].id : 1,
+    });
+    setLocationFormError(null);
+    setIsCreateLocationModalOpen(true);
+  };
+
+  const handleOpenEditLocationModal = (loc: LocationItem) => {
+    setSelectedLocation(loc);
+    setLocationForm({
+      name: loc.name,
+      code: loc.code || '',
+      country: loc.country || 'India',
+      state_id: loc.state_id,
+      city: loc.city || loc.name,
+      area: loc.area || '',
+      pincode: loc.pincode || '',
+      address: loc.address || '',
+      latitude: loc.latitude ?? null,
+      longitude: loc.longitude ?? null,
+      description: loc.description || '',
+      tier: loc.tier || 1,
+      status: loc.status || (loc.active ? 'ACTIVE' : 'INACTIVE'),
+    });
+    setLocationFormError(null);
+    setIsEditLocationModalOpen(true);
+  };
+
+  const handleOpenDeleteLocationModal = (loc: LocationItem) => {
+    setSelectedLocation(loc);
+    setIsDeleteLocationConfirmOpen(true);
+  };
+
+  const handleSaveCreateLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!locationForm.name.trim()) {
+      setLocationFormError('Location name is required.');
+      return;
+    }
+    if (!locationForm.code.trim()) {
+      setLocationFormError('Location code is required (e.g., DEL-CENTRAL).');
+      return;
+    }
+    setIsSubmittingLocation(true);
+    setLocationFormError(null);
+    try {
+      const res = await api.createLocation(locationForm);
+      if (res.success) {
+        addToast({
+          type: 'success',
+          title: 'Location Commissioned',
+          message: res.message || `Location '${res.data.name}' has been created successfully.`,
+        });
+        setIsCreateLocationModalOpen(false);
+        fetchLocations();
+      } else {
+        setLocationFormError(res.message || 'Failed to create location.');
+      }
+    } catch (err: any) {
+      setLocationFormError(err.message || 'An error occurred while creating the location.');
+      addToast({
+        type: 'error',
+        title: 'Creation Failed',
+        message: err.message || 'Failed to create location.',
+      });
+    } finally {
+      setIsSubmittingLocation(false);
+    }
+  };
+
+  const handleSaveEditLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLocation) return;
+    if (!locationForm.name.trim()) {
+      setLocationFormError('Location name is required.');
+      return;
+    }
+    if (!locationForm.code.trim()) {
+      setLocationFormError('Location code is required.');
+      return;
+    }
+    setIsSubmittingLocation(true);
+    setLocationFormError(null);
+    try {
+      const res = await api.updateLocation(selectedLocation.id, locationForm);
+      if (res.success) {
+        addToast({
+          type: 'success',
+          title: 'Location Updated',
+          message: res.message || `Location '${res.data.name}' updated successfully.`,
+        });
+        setIsEditLocationModalOpen(false);
+        fetchLocations();
+      } else {
+        setLocationFormError(res.message || 'Failed to update location.');
+      }
+    } catch (err: any) {
+      setLocationFormError(err.message || 'An error occurred while updating the location.');
+      addToast({
+        type: 'error',
+        title: 'Update Failed',
+        message: err.message || 'Failed to update location.',
+      });
+    } finally {
+      setIsSubmittingLocation(false);
+    }
+  };
+
+  const handleToggleLocationStatus = async (loc: LocationItem) => {
+    try {
+      const isActive = loc.status === 'ACTIVE' || loc.active;
+      let res;
+      if (isActive) {
+        res = await api.deactivateLocation(loc.id);
+        addToast({
+          type: 'info',
+          title: 'Location Deactivated',
+          message: res.message || `Location '${loc.name}' deactivated.`,
+        });
+      } else {
+        res = await api.activateLocation(loc.id);
+        addToast({
+          type: 'success',
+          title: 'Location Activated',
+          message: res.message || `Location '${loc.name}' is now active.`,
+        });
+      }
+      fetchLocations();
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Status Change Failed',
+        message: err.message || 'Could not alter location status.',
+      });
+    }
+  };
+
+  const handleConfirmDeleteLocation = async () => {
+    if (!selectedLocation) return;
+    setIsSubmittingLocation(true);
+    try {
+      const res = await api.deleteLocation(selectedLocation.id);
+      if (res.action === 'ARCHIVED') {
+        addToast({
+          type: 'info',
+          title: 'Location Safely Archived',
+          message: res.message,
+        });
+      } else {
+        addToast({
+          type: 'success',
+          title: 'Location Deleted',
+          message: res.message || `Location '${selectedLocation.name}' permanently deleted.`,
+        });
+      }
+      setIsDeleteLocationConfirmOpen(false);
+      setSelectedLocation(null);
+      fetchLocations();
+    } catch (err: any) {
+      addToast({
+        type: 'error',
+        title: 'Deletion Failed',
+        message: err.message || 'Could not delete location.',
+      });
+    } finally {
+      setIsSubmittingLocation(false);
+    }
+  };
 
   // Service Management Handlers
   const handleToggleServiceStatus = async (id: string, currentStatusLive: boolean) => {
@@ -983,58 +1238,314 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
         );
       }
 
-      case 'locations':
+      case 'locations': {
+        const totalHubs = liveLocations.length;
+        const activeHubs = liveLocations.filter((l) => l.status === 'ACTIVE' || l.active).length;
+        const statesCovered = new Set(liveLocations.map((l) => l.state_name || l.state_id)).size;
+        const totalReferences = liveLocations.reduce((sum, l) => sum + (l.usage_count || 0), 0);
+
         return (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Top Operational Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card className="p-4">
-                <span className="text-xs text-slate-400 font-semibold uppercase">Operational Hubs</span>
-                <div className="text-2xl font-black text-slate-900 mt-1">5 Metros</div>
+                <span className="text-xs text-slate-400 font-semibold uppercase">Total Regional Hubs</span>
+                <div className="text-2xl font-black text-slate-900 mt-1">{totalHubs} Hubs</div>
+                <div className="text-xs text-slate-500 mt-1">Configured Service Centers</div>
               </Card>
               <Card className="p-4">
-                <span className="text-xs text-slate-400 font-semibold uppercase">Coverage Pincodes</span>
-                <div className="text-2xl font-black text-slate-900 mt-1">142 Pincodes</div>
+                <span className="text-xs text-slate-400 font-semibold uppercase">Active Coverage Hubs</span>
+                <div className="text-2xl font-black text-emerald-600 mt-1">{activeHubs} Live</div>
+                <div className="text-xs text-slate-500 mt-1">Accepting customer bookings</div>
               </Card>
               <Card className="p-4">
-                <span className="text-xs text-slate-400 font-semibold uppercase">Avg Response Time</span>
-                <div className="text-2xl font-black text-emerald-600 mt-1">42 Minutes</div>
+                <span className="text-xs text-slate-400 font-semibold uppercase">States & UTs Covered</span>
+                <div className="text-2xl font-black text-blue-600 mt-1">{statesCovered} Territories</div>
+                <div className="text-xs text-slate-500 mt-1">Pan-India operational presence</div>
+              </Card>
+              <Card className="p-4">
+                <span className="text-xs text-slate-400 font-semibold uppercase">Linked Platform Records</span>
+                <div className="text-2xl font-black text-indigo-600 mt-1">{totalReferences} Records</div>
+                <div className="text-xs text-slate-500 mt-1">Protected by archival governance</div>
               </Card>
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Hub Name</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Hub Manager</TableHead>
-                  <TableHead>Fleet Size</TableHead>
-                  <TableHead>Pincode Clusters</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[
-                  { hub: 'Delhi NCR (Central & South)', st: 'Delhi', mgr: 'Rajesh K.', fleet: 34, pins: '110001 - 110092', status: 'Optimal' },
-                  { hub: 'Gurgaon Cyber City Hub', st: 'Haryana', mgr: 'Vikram A.', fleet: 28, pins: '122001 - 122018', status: 'Optimal' },
-                  { hub: 'Noida Expressway Hub', st: 'Uttar Pradesh', mgr: 'Sunil V.', fleet: 18, pins: '201301 - 201309', status: 'Optimal' },
-                  { hub: 'Mumbai Western Suburbs', st: 'Maharashtra', mgr: 'Deepak P.', fleet: 24, pins: '400050 - 400099', status: 'Expanding' },
-                  { hub: 'Bangalore Tech Corridor', st: 'Karnataka', mgr: 'Anand R.', fleet: 22, pins: '560001 - 560103', status: 'Optimal' },
-                ].map((l, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-bold text-slate-900">{l.hub}</TableCell>
-                    <TableCell>{l.st}</TableCell>
-                    <TableCell>{l.mgr}</TableCell>
-                    <TableCell className="font-semibold">{l.fleet} Techs</TableCell>
-                    <TableCell className="font-mono text-xs">{l.pins}</TableCell>
-                    <TableCell>
-                      <Badge variant="success" size="sm">{l.status}</Badge>
-                    </TableCell>
+            {/* Filter and Action Toolbar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+              <div className="flex flex-1 flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    id="search-locations"
+                    placeholder="Search by hub name, code, city, pincode..."
+                    className="pl-9 text-xs"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    id="filter-location-state"
+                    value={locationFilterState}
+                    onChange={(e) => setLocationFilterState(e.target.value)}
+                    className="h-9 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    <option value="">All States ({availableStates.length})</option>
+                    {availableStates.map((st: any) => (
+                      <option key={st.id} value={st.name}>
+                        {st.name} ({st.code})
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    id="filter-location-status"
+                    value={locationFilterStatus}
+                    onChange={(e) => setLocationFilterStatus(e.target.value)}
+                    className="h-9 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="ACTIVE">Active Only</option>
+                    <option value="INACTIVE">Inactive Only</option>
+                    <option value="ARCHIVED">Archived Only</option>
+                  </select>
+
+                  <Button
+                    id="btn-refresh-locations"
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-600 hover:text-slate-900 px-2"
+                    title="Refresh Location Hubs"
+                    onClick={fetchLocations}
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isLoadingLocations ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                {canCreateLocation ? (
+                  <Button
+                    id="btn-add-location"
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Plus className="w-4 h-4" />}
+                    onClick={handleOpenCreateLocationModal}
+                  >
+                    Add Location
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg text-xs text-slate-500 border border-slate-200">
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Read-Only View ({user?.role})</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Locations Table */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Hub Name & Identifier</TableHead>
+                    <TableHead>State & Jurisdiction</TableHead>
+                    <TableHead>City / Region</TableHead>
+                    <TableHead>Pincode & Address</TableHead>
+                    <TableHead>Classification</TableHead>
+                    <TableHead>References</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Governance Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {isLoadingLocations && liveLocations.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-slate-500">
+                        <div className="flex items-center justify-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
+                          <span>Loading regional operational hubs...</span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : liveLocations.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-12 text-slate-500">
+                        <div className="max-w-sm mx-auto space-y-3">
+                          <div className="w-10 h-10 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                            <MapPin className="w-5 h-5" />
+                          </div>
+                          <div className="font-semibold text-slate-900">No matching locations found</div>
+                          <p className="text-xs text-slate-500">
+                            No operational hubs match your current search and filter criteria.
+                          </p>
+                          {canCreateLocation && (
+                            <Button
+                              id="btn-empty-add-location"
+                              size="sm"
+                              variant="primary"
+                              leftIcon={<Plus className="w-4 h-4" />}
+                              onClick={handleOpenCreateLocationModal}
+                            >
+                              Add First Location
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    liveLocations.map((loc) => {
+                      const isActive = loc.status === 'ACTIVE' || loc.active;
+                      const isArchived = loc.status === 'ARCHIVED';
+
+                      return (
+                        <TableRow key={loc.id} className={isArchived ? 'opacity-70 bg-slate-50/50' : ''}>
+                          {/* Hub Name & Code */}
+                          <TableCell>
+                            <div className="flex items-start gap-2">
+                              <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg shrink-0 mt-0.5">
+                                <Building className="w-3.5 h-3.5" />
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900">{loc.name}</div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="font-mono text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200 font-semibold">
+                                    {loc.code || `LOC-${loc.id}`}
+                                  </span>
+                                  {loc.description && (
+                                    <span className="text-[11px] text-slate-400 truncate max-w-[160px]" title={loc.description}>
+                                      {loc.description}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+
+                          {/* State & Jurisdiction */}
+                          <TableCell>
+                            <div className="font-medium text-slate-900">{loc.state_name || 'N/A'}</div>
+                            <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                              <span>{loc.country || 'India'}</span>
+                              {loc.state_code && <span className="font-mono text-slate-500">({loc.state_code})</span>}
+                            </div>
+                          </TableCell>
+
+                          {/* City / Region */}
+                          <TableCell>
+                            <div className="font-medium text-slate-800">{loc.city || loc.name}</div>
+                            {loc.area && <div className="text-[11px] text-slate-500">{loc.area}</div>}
+                          </TableCell>
+
+                          {/* Pincode & Address */}
+                          <TableCell>
+                            <div className="flex items-center gap-1 font-mono text-xs font-semibold text-slate-700">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>{loc.pincode || 'All Hub Zones'}</span>
+                            </div>
+                            {loc.address && (
+                              <div className="text-[11px] text-slate-400 truncate max-w-[200px]" title={loc.address}>
+                                {loc.address}
+                              </div>
+                            )}
+                          </TableCell>
+
+                          {/* Classification / Tier */}
+                          <TableCell>
+                            <Badge
+                              variant={loc.tier === 1 ? 'info' : loc.tier === 2 ? 'neutral' : 'warning'}
+                              size="sm"
+                            >
+                              {loc.tier === 1 ? 'Tier 1 Metro' : loc.tier === 2 ? 'Tier 2 Hub' : 'Regional'}
+                            </Badge>
+                          </TableCell>
+
+                          {/* Dependencies & Safety */}
+                          <TableCell>
+                            <div
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200"
+                              title={`${loc.usage_count || 0} active foreign key links across bookings, users, and tech scopes`}
+                            >
+                              <Shield className="w-3 h-3 text-slate-400" />
+                              <span>{loc.usage_count || 0} Records</span>
+                            </div>
+                          </TableCell>
+
+                          {/* Status */}
+                          <TableCell>
+                            <Badge
+                              variant={isArchived ? 'neutral' : isActive ? 'success' : 'warning'}
+                              size="sm"
+                            >
+                              {isArchived ? 'ARCHIVED' : isActive ? 'ACTIVE' : 'INACTIVE'}
+                            </Badge>
+                          </TableCell>
+
+                          {/* Actions */}
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {/* Edit Location */}
+                              {canEditLocation && (
+                                <Button
+                                  id={`btn-edit-location-${loc.id}`}
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 p-1.5 h-8 w-8"
+                                  title="Edit Location Hub"
+                                  onClick={() => handleOpenEditLocationModal(loc)}
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+
+                              {/* Toggle Active / Inactive Status */}
+                              {canToggleLocationStatus && !isArchived && (
+                                <Button
+                                  id={`btn-toggle-location-${loc.id}`}
+                                  size="sm"
+                                  variant="ghost"
+                                  className={`text-xs p-1.5 h-8 w-8 ${
+                                    isActive
+                                      ? 'text-amber-600 hover:text-amber-700 hover:bg-amber-50'
+                                      : 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                                  }`}
+                                  title={isActive ? 'Deactivate Location' : 'Activate Location'}
+                                  onClick={() => handleToggleLocationStatus(loc)}
+                                >
+                                  <Power className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+
+                              {/* Delete or Archive Location */}
+                              {canDeleteLocation && (
+                                <Button
+                                  id={`btn-delete-location-${loc.id}`}
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 p-1.5 h-8 w-8"
+                                  title={
+                                    (loc.usage_count || 0) > 0
+                                      ? 'Archive Location (Preserves dependent records)'
+                                      : 'Delete Location'
+                                  }
+                                  onClick={() => handleOpenDeleteLocationModal(loc)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         );
+      }
 
       case 'finance':
       case 'payments':
@@ -1921,6 +2432,527 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Create Regional Location Modal */}
+      <Modal
+        isOpen={isCreateLocationModalOpen}
+        onClose={() => setIsCreateLocationModalOpen(false)}
+        title="Commission New Regional Location Hub"
+        description="Configure a new service territory with full RBAC governance and territory tracking."
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveCreateLocation} className="space-y-4 pt-2">
+          {locationFormError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{locationFormError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Hub / Location Name <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                id="create-location-name"
+                required
+                placeholder="e.g., Delhi NCR Super Hub"
+                value={locationForm.name}
+                onChange={(e) => setLocationForm({ ...locationForm, name: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Location Code <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                id="create-location-code"
+                required
+                placeholder="e.g., DEL-CENTRAL"
+                value={locationForm.code}
+                onChange={(e) => setLocationForm({ ...locationForm, code: e.target.value.toUpperCase() })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                State / Territory <span className="text-rose-500">*</span>
+              </label>
+              <select
+                id="create-location-state"
+                required
+                value={locationForm.state_id}
+                onChange={(e) => setLocationForm({ ...locationForm, state_id: parseInt(e.target.value, 10) })}
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {availableStates.map((st: any) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} ({st.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">City</label>
+              <Input
+                id="create-location-city"
+                placeholder="e.g., New Delhi"
+                value={locationForm.city || ''}
+                onChange={(e) => setLocationForm({ ...locationForm, city: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Area / Locality</label>
+              <Input
+                id="create-location-area"
+                placeholder="e.g., Connaught Place"
+                value={locationForm.area || ''}
+                onChange={(e) => setLocationForm({ ...locationForm, area: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Primary Pincode</label>
+              <Input
+                id="create-location-pincode"
+                placeholder="e.g., 110001"
+                value={locationForm.pincode || ''}
+                onChange={(e) => setLocationForm({ ...locationForm, pincode: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Market Tier</label>
+              <select
+                id="create-location-tier"
+                value={locationForm.tier || 1}
+                onChange={(e) => setLocationForm({ ...locationForm, tier: parseInt(e.target.value, 10) })}
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={1}>Tier 1 (Metro / High Volume)</option>
+                <option value={2}>Tier 2 (Emerging Hub)</option>
+                <option value={3}>Tier 3 (Regional Expansion)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Initial Status</label>
+              <select
+                id="create-location-status"
+                value={locationForm.status || 'ACTIVE'}
+                onChange={(e) =>
+                  setLocationForm({
+                    ...locationForm,
+                    status: e.target.value as 'ACTIVE' | 'INACTIVE',
+                  })
+                }
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ACTIVE">Active (Live in Booking Engine)</option>
+                <option value="INACTIVE">Inactive (Draft / Setup)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Physical Address / Operations Facility</label>
+            <Input
+              id="create-location-address"
+              placeholder="e.g., Hub 4B, Sector 18, Commercial Center"
+              value={locationForm.address || ''}
+              onChange={(e) => setLocationForm({ ...locationForm, address: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Latitude (Optional)</label>
+              <Input
+                id="create-location-lat"
+                type="number"
+                step="any"
+                placeholder="e.g., 28.6139"
+                value={locationForm.latitude ?? ''}
+                onChange={(e) =>
+                  setLocationForm({
+                    ...locationForm,
+                    latitude: e.target.value ? parseFloat(e.target.value) : null,
+                  })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Longitude (Optional)</label>
+              <Input
+                id="create-location-lng"
+                type="number"
+                step="any"
+                placeholder="e.g., 77.2090"
+                value={locationForm.longitude ?? ''}
+                onChange={(e) =>
+                  setLocationForm({
+                    ...locationForm,
+                    longitude: e.target.value ? parseFloat(e.target.value) : null,
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Description / Hub Operations Notes</label>
+            <textarea
+              id="create-location-desc"
+              rows={2}
+              className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g., Primary Central NCR logistics & fulfillment node with 35 certified technicians."
+              value={locationForm.description || ''}
+              onChange={(e) => setLocationForm({ ...locationForm, description: e.target.value })}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCreateLocationModalOpen(false)}
+              disabled={isSubmittingLocation}
+            >
+              Cancel
+            </Button>
+            <Button
+              id="btn-submit-create-location"
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSubmittingLocation}
+            >
+              {isSubmittingLocation ? 'Commissioning...' : 'Commission Hub'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Regional Location Modal */}
+      <Modal
+        isOpen={isEditLocationModalOpen}
+        onClose={() => setIsEditLocationModalOpen(false)}
+        title="Edit Regional Location Hub"
+        description="Update operational parameters, address, code, or tier for this territory."
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveEditLocation} className="space-y-4 pt-2">
+          {locationFormError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{locationFormError}</span>
+            </div>
+          )}
+
+          {selectedLocation && (selectedLocation.usage_count || 0) > 0 && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-start gap-2">
+              <Shield className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">Active Records Protected:</span> This location hub is referenced by{' '}
+                <span className="font-bold">{selectedLocation.usage_count}</span> active bookings, customer addresses,
+                or technician assignments. Updates will automatically synchronize across all dependent services.
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Hub / Location Name <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                id="edit-location-name"
+                required
+                value={locationForm.name}
+                onChange={(e) => setLocationForm({ ...locationForm, name: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Location Code <span className="text-rose-500">*</span>
+              </label>
+              <Input
+                id="edit-location-code"
+                required
+                value={locationForm.code}
+                onChange={(e) => setLocationForm({ ...locationForm, code: e.target.value.toUpperCase() })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                State / Territory <span className="text-rose-500">*</span>
+              </label>
+              <select
+                id="edit-location-state"
+                required
+                value={locationForm.state_id}
+                onChange={(e) => setLocationForm({ ...locationForm, state_id: parseInt(e.target.value, 10) })}
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {availableStates.map((st: any) => (
+                  <option key={st.id} value={st.id}>
+                    {st.name} ({st.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">City</label>
+              <Input
+                id="edit-location-city"
+                value={locationForm.city || ''}
+                onChange={(e) => setLocationForm({ ...locationForm, city: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Area / Locality</label>
+              <Input
+                id="edit-location-area"
+                value={locationForm.area || ''}
+                onChange={(e) => setLocationForm({ ...locationForm, area: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Primary Pincode</label>
+              <Input
+                id="edit-location-pincode"
+                value={locationForm.pincode || ''}
+                onChange={(e) => setLocationForm({ ...locationForm, pincode: e.target.value })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Market Tier</label>
+              <select
+                id="edit-location-tier"
+                value={locationForm.tier || 1}
+                onChange={(e) => setLocationForm({ ...locationForm, tier: parseInt(e.target.value, 10) })}
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={1}>Tier 1 (Metro / High Volume)</option>
+                <option value={2}>Tier 2 (Emerging Hub)</option>
+                <option value={3}>Tier 3 (Regional Expansion)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Operational Status</label>
+              <select
+                id="edit-location-status"
+                value={locationForm.status || 'ACTIVE'}
+                onChange={(e) =>
+                  setLocationForm({
+                    ...locationForm,
+                    status: e.target.value as 'ACTIVE' | 'INACTIVE' | 'ARCHIVED',
+                  })
+                }
+                className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="ACTIVE">Active (Live in Booking Engine)</option>
+                <option value="INACTIVE">Inactive (Suspended)</option>
+                <option value="ARCHIVED">Archived (Decommissioned)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Physical Address / Operations Facility</label>
+            <Input
+              id="edit-location-address"
+              value={locationForm.address || ''}
+              onChange={(e) => setLocationForm({ ...locationForm, address: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Latitude (Optional)</label>
+              <Input
+                id="edit-location-lat"
+                type="number"
+                step="any"
+                value={locationForm.latitude ?? ''}
+                onChange={(e) =>
+                  setLocationForm({
+                    ...locationForm,
+                    latitude: e.target.value ? parseFloat(e.target.value) : null,
+                  })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Longitude (Optional)</label>
+              <Input
+                id="edit-location-lng"
+                type="number"
+                step="any"
+                value={locationForm.longitude ?? ''}
+                onChange={(e) =>
+                  setLocationForm({
+                    ...locationForm,
+                    longitude: e.target.value ? parseFloat(e.target.value) : null,
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Description / Hub Operations Notes</label>
+            <textarea
+              id="edit-location-desc"
+              rows={2}
+              className="w-full text-xs font-medium rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={locationForm.description || ''}
+              onChange={(e) => setLocationForm({ ...locationForm, description: e.target.value })}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditLocationModalOpen(false)}
+              disabled={isSubmittingLocation}
+            >
+              Cancel
+            </Button>
+            <Button
+              id="btn-submit-edit-location"
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSubmittingLocation}
+            >
+              {isSubmittingLocation ? 'Saving Changes...' : 'Save Changes'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Safe Deletion / Archival Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteLocationConfirmOpen}
+        onClose={() => setIsDeleteLocationConfirmOpen(false)}
+        title={
+          selectedLocation && (selectedLocation.usage_count || 0) > 0
+            ? 'Archive Location Hub (Protected Records)'
+            : 'Confirm Location Hub Deletion'
+        }
+        description="Verify decommission action in accordance with enterprise data protection policy."
+        maxWidth="md"
+      >
+        {selectedLocation && (
+          <div className="space-y-4 pt-2">
+            {(selectedLocation.usage_count || 0) > 0 ? (
+              <div className="space-y-3">
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-bold text-slate-900">
+                      Cannot Hard-Delete: Referenced by {selectedLocation.usage_count} Records
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">
+                      Hub <span className="font-bold font-mono">{selectedLocation.name} ({selectedLocation.code})</span> is
+                      presently linked to active customer bookings, assigned technicians, or billing records.
+                    </p>
+                    <p className="text-slate-600 leading-relaxed font-semibold">
+                      To preserve financial audits, legal compliance, and booking histories, this hub will be safely{' '}
+                      <span className="text-amber-700 underline">ARCHIVED and DEACTIVATED</span>. It will be removed from customer
+                      booking forms while keeping existing records fully intact.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsDeleteLocationConfirmOpen(false)}
+                    disabled={isSubmittingLocation}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    id="btn-confirm-archive-location"
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={handleConfirmDeleteLocation}
+                    disabled={isSubmittingLocation}
+                  >
+                    {isSubmittingLocation ? 'Archiving...' : 'Safely Archive & Deactivate Hub'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-800 flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-bold text-slate-900">
+                      Permanently Delete Hub
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">
+                      Are you sure you want to delete <span className="font-bold">{selectedLocation.name}</span> ({selectedLocation.code})?
+                      This location has 0 active dependencies and will be permanently removed from the master registry.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsDeleteLocationConfirmOpen(false)}
+                    disabled={isSubmittingLocation}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    id="btn-confirm-delete-location"
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="bg-rose-600 hover:bg-rose-700 text-white"
+                    onClick={handleConfirmDeleteLocation}
+                    disabled={isSubmittingLocation}
+                  >
+                    {isSubmittingLocation ? 'Deleting...' : 'Permanently Delete Hub'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );
