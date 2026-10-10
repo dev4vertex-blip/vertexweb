@@ -1,0 +1,133 @@
+{
+  "entities": {
+    "users": {
+      "title": "UserProfile",
+      "description": "User profile holding public identity, role, and contact information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user identifier matching auth UID" },
+        "name": { "type": "string", "description": "Full name of the user", "minLength": 2, "maxLength": 100 },
+        "email": { "type": "string", "description": "Email address of the user", "maxLength": 150 },
+        "phone": { "type": "string", "description": "Phone number with country code", "maxLength": 25 },
+        "role": { "type": "string", "description": "System role", "enum": ["CUSTOMER", "TECHNICIAN", "MANAGER", "SUPER_ADMIN", "SALES"] },
+        "city": { "type": "string", "description": "Operational city or hub", "maxLength": 80 },
+        "status": { "type": "string", "description": "Account status", "enum": ["ACTIVE", "INACTIVE", "PENDING"] },
+        "created_at": { "type": "string", "description": "ISO timestamp of creation" },
+        "updated_at": { "type": "string", "description": "ISO timestamp of last update" }
+      },
+      "required": ["id", "name", "email", "role", "status"]
+    },
+    "bookings": {
+      "title": "ServiceBooking",
+      "description": "Service repair or maintenance booking requested by customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Booking unique identifier" },
+        "customerId": { "type": "string", "description": "Customer UID who booked the service" },
+        "customerName": { "type": "string", "description": "Customer full name", "maxLength": 100 },
+        "customerPhone": { "type": "string", "description": "Customer phone number", "maxLength": 25 },
+        "serviceId": { "type": "string", "description": "Catalog service item ID", "maxLength": 64 },
+        "serviceName": { "type": "string", "description": "Name of the requested service", "maxLength": 120 },
+        "category": { "type": "string", "description": "Category like AC, Electrical, Plumbing", "maxLength": 60 },
+        "scheduledDate": { "type": "string", "description": "Scheduled appointment date YYYY-MM-DD" },
+        "scheduledSlot": { "type": "string", "description": "Scheduled appointment time slot", "maxLength": 60 },
+        "amount": { "type": "number", "description": "Final service charge in INR" },
+        "paymentStatus": { "type": "string", "enum": ["Paid Online", "Pending", "Cash After Service"] },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "technician_assigned", "assigned", "accepted", "in_progress", "completed", "cancelled", "rescheduled"] },
+        "technicianId": { "type": "string", "description": "Assigned technician UID if assigned" },
+        "technicianName": { "type": "string", "description": "Assigned technician name", "maxLength": 100 },
+        "otp": { "type": "string", "description": "4-digit Start-of-Service verification OTP", "maxLength": 6 },
+        "problemDescription": { "type": "string", "description": "Customer notes or symptoms", "maxLength": 500 },
+        "createdAt": { "type": "string", "description": "ISO timestamp of booking creation" }
+      },
+      "required": ["id", "customerId", "serviceId", "serviceName", "category", "scheduledDate", "status", "amount"]
+    },
+    "services": {
+      "title": "CatalogService",
+      "description": "Verified repair and maintenance catalog service offered by VERTEX",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Service package identifier" },
+        "name": { "type": "string", "description": "Display title of service", "maxLength": 120 },
+        "category": { "type": "string", "description": "Trade category", "maxLength": 60 },
+        "description": { "type": "string", "description": "Service scope details", "maxLength": 1000 },
+        "price": { "type": "number", "description": "Standard service charge" },
+        "durationMinutes": { "type": "number", "description": "Estimated duration in minutes" },
+        "rating": { "type": "number", "description": "Aggregate customer rating" },
+        "warranty": { "type": "string", "description": "Service warranty text", "maxLength": 100 }
+      },
+      "required": ["id", "name", "category", "price"]
+    },
+    "amcContracts": {
+      "title": "AMCContract",
+      "description": "Active or past annual maintenance subscription for premises",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Contract identifier" },
+        "contractNumber": { "type": "string", "description": "Readable contract number", "maxLength": 50 },
+        "customerId": { "type": "string", "description": "Subscriber customer UID" },
+        "planId": { "type": "string", "description": "Subscribed AMC Plan ID", "maxLength": 50 },
+        "planName": { "type": "string", "description": "Plan title", "maxLength": 100 },
+        "startDate": { "type": "string", "description": "Contract start date" },
+        "endDate": { "type": "string", "description": "Contract end date" },
+        "price": { "type": "number", "description": "Annual fee paid" },
+        "status": { "type": "string", "enum": ["PENDING", "ACTIVE", "EXPIRING_SOON", "EXPIRED", "CANCELLED", "SUSPENDED"] },
+        "visitsIncluded": { "type": "number", "description": "Total visits included" },
+        "visitsUsed": { "type": "number", "description": "Visits completed to date" }
+      },
+      "required": ["id", "contractNumber", "customerId", "planId", "status", "price"]
+    },
+    "notifications": {
+      "title": "UserNotification",
+      "description": "In-app alerts and notifications delivered to users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Notification identifier" },
+        "userId": { "type": "string", "description": "Recipient user UID" },
+        "title": { "type": "string", "description": "Alert title", "maxLength": 120 },
+        "message": { "type": "string", "description": "Alert body text", "maxLength": 400 },
+        "isRead": { "type": "boolean", "description": "Read flag" },
+        "type": { "type": "string", "enum": ["booking", "system", "payment", "promotion", "reminder"] },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["id", "userId", "title", "message", "isRead", "type"]
+    },
+    "admins": {
+      "title": "AdminRegistry",
+      "description": "Registry of authorized admin and staff UIDs used for server-side role validation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "User UID matching auth.uid" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "MANAGER", "FINANCE"] },
+        "createdAt": { "type": "string", "description": "Grant timestamp" }
+      },
+      "required": ["id", "role"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "User profile documents keyed by Auth UID"
+    },
+    "/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/bookings" },
+      "description": "Customer service bookings"
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/services" },
+      "description": "Public catalog service definitions"
+    },
+    "/amcContracts/{contractId}": {
+      "schema": { "$ref": "#/entities/amcContracts" },
+      "description": "Annual Maintenance Contracts keyed by contractId"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/notifications" },
+      "description": "User notifications keyed by notificationId"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/admins" },
+      "description": "Trusted Admin and Manager UIDs for zero-trust security checks"
+    }
+  }
+}

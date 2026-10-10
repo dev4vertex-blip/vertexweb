@@ -1,0 +1,137 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Entity Validation Helpers
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'role', 'status'])
+        && data.id is string && data.id == request.auth.uid
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && data.email is string && data.email.size() <= 150
+        && data.role in ['CUSTOMER', 'TECHNICIAN', 'MANAGER', 'SUPER_ADMIN', 'SALES']
+        && data.status in ['ACTIVE', 'INACTIVE', 'PENDING'];
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['id', 'customerId', 'serviceId', 'serviceName', 'category', 'scheduledDate', 'status', 'amount'])
+        && data.id is string
+        && data.customerId is string && data.customerId == request.auth.uid
+        && data.serviceId is string && data.serviceId.size() <= 64
+        && data.serviceName is string && data.serviceName.size() <= 120
+        && data.category is string && data.category.size() <= 60
+        && data.status in ['pending', 'confirmed', 'technician_assigned', 'assigned', 'accepted', 'in_progress', 'completed', 'cancelled', 'rescheduled']
+        && data.amount is number && data.amount >= 0;
+    }
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isSignedIn()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUser(incoming())
+        && (incoming().role == 'CUSTOMER' || isAdmin());
+      allow update: if isSignedIn()
+        && isValidId(userId)
+        && (
+          (isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'city', 'updated_at'])
+            && incoming().name.size() <= 100)
+          || isAdmin()
+        );
+      allow delete: if isAdmin();
+    }
+
+    // 2. Bookings Collection
+    match /bookings/{bookingId} {
+      allow get: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid
+        || resource.data.technicianId == request.auth.uid
+        || isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.customerId == request.auth.uid
+        || resource.data.technicianId == request.auth.uid
+        || isAdmin()
+      );
+      allow create: if isSignedIn()
+        && isValidId(bookingId)
+        && isValidBooking(incoming());
+      allow update: if isSignedIn()
+        && isValidId(bookingId)
+        && (
+          (resource.data.customerId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['scheduledDate', 'scheduledSlot', 'problemDescription', 'status'])
+            && (incoming().status in ['cancelled', 'rescheduled']))
+          || (resource.data.technicianId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'otp'])
+            && (incoming().status in ['accepted', 'in_progress', 'completed']))
+          || isAdmin()
+        );
+      allow delete: if isAdmin();
+    }
+
+    // 3. Catalog Services (Public Read, Admin Write)
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 4. AMC Contracts
+    match /amcContracts/{contractId} {
+      allow get: if isSignedIn() && (resource.data.customerId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.customerId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(contractId) && incoming().customerId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // 5. Notifications
+    match /notifications/{notificationId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAdmin();
+      allow update: if isSignedIn()
+        && isValidId(notificationId)
+        && resource.data.userId == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isRead']);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+
+    // 6. Trusted Admins Registry
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
