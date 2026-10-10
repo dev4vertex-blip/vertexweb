@@ -137,10 +137,10 @@ export const UnauthorizedView: React.FC<UnauthorizedViewProps> = ({
           className="mt-3 text-sm text-slate-600 leading-relaxed max-w-md mx-auto"
         >
           {message ||
-            'You do not have administrative clearance to access this module. Permissions are restricted by the VERTEX Role-Based Access Control (RBAC) security policy.'}
+            'You do not have administrative clearance to access this module. Please contact your organization administrator if you require access.'}
         </p>
 
-        {/* Access Diagnostics Card */}
+        {/* Access Information Card */}
         <div
           id="unauthorized-diagnostics-box"
           className="mt-6 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-left space-y-2.5"
@@ -156,7 +156,7 @@ export const UnauthorizedView: React.FC<UnauthorizedViewProps> = ({
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-slate-500 font-medium">Assigned Role</span>
+            <span className="text-slate-500 font-medium">Account Role</span>
             <Badge
               id="unauthorized-role-badge"
               variant={getRoleBadgeVariant(user?.role)}
@@ -165,27 +165,6 @@ export const UnauthorizedView: React.FC<UnauthorizedViewProps> = ({
               {user ? user.role : 'GUEST / NONE'}
             </Badge>
           </div>
-
-          {attemptedPath && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-slate-500 font-medium shrink-0">Attempted Endpoint</span>
-              <code
-                id="unauthorized-attempted-path"
-                className="text-[11px] font-mono bg-white px-2 py-0.5 rounded border border-slate-200 text-slate-700 truncate max-w-[220px]"
-              >
-                {attemptedPath}
-              </code>
-            </div>
-          )}
-
-          {requiredRole && (
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500 font-medium">Required Clearance</span>
-              <span className="text-[11px] font-medium text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
-                {requiredRole}
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Action Controls */}

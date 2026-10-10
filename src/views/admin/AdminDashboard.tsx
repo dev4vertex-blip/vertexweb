@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { SalesDashboardView } from './SalesDashboardView';
 import { Booking, TechnicianUser } from '../../types';
 import {
   ADMIN_DASHBOARD_METRICS,
@@ -39,6 +41,7 @@ import {
 
 export const AdminDashboard: React.FC = () => {
   const { bookings, allCustomers, allTechnicians } = useApp();
+  const { user } = useAuth();
 
   // Selected Booking for Details / Assignment Modals
   const [selectedBookingForDetails, setSelectedBookingForDetails] = useState<Booking | null>(null);
@@ -48,6 +51,10 @@ export const AdminDashboard: React.FC = () => {
   const [activeQueueTab, setActiveQueueTab] = useState<
     'today' | 'pending' | 'active' | 'recent' | 'completed'
   >('pending');
+
+  if (user?.role === 'SALES' || user?.role === 'SALES_TEAM') {
+    return <SalesDashboardView />;
+  }
 
   const maxRevenue = Math.max(...REVENUE_CHART_DATA.map((d) => d.onDemand + d.amc));
   const maxBookings = Math.max(...BOOKINGS_TREND_DATA.map((d) => d.bookings));

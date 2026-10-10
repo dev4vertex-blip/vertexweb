@@ -10,6 +10,7 @@ import { AdminTechniciansView } from './AdminTechniciansView';
 import { UserManagementView } from './users/UserManagementView';
 import { AdminLeadsView } from './leads/AdminLeadsView';
 import { AdminPromotionsView } from './promotions/AdminPromotionsView';
+import { AdminManagersView } from './managers/AdminManagersView';
 import { AdminGenericSectionView } from './AdminGenericSectionView';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
@@ -44,6 +45,7 @@ import {
   Sparkles,
   TrendingUp,
   Tag,
+  Briefcase,
 } from 'lucide-react';
 
 interface SidebarItem {
@@ -152,6 +154,20 @@ const ALL_SIDEBAR_ITEMS: SidebarItem[] = [
     icon: <MapPin className="w-4 h-4" />,
     category: 'operations',
   },
+  {
+    id: 'partners',
+    route: '/admin/partners',
+    label: 'Partners & Rules',
+    icon: <Briefcase className="w-4 h-4" />,
+    category: 'operations',
+  },
+  {
+    id: 'hr',
+    route: '/admin/hr',
+    label: 'HR & Personnel',
+    icon: <Users className="w-4 h-4" />,
+    category: 'operations',
+  },
 
   // Finance & AMC
   {
@@ -188,20 +204,6 @@ const ALL_SIDEBAR_ITEMS: SidebarItem[] = [
     label: 'Commission',
     icon: <Percent className="w-4 h-4" />,
     category: 'finance',
-  },
-  {
-    id: 'partners',
-    route: '/admin/partners',
-    label: 'Partners & Rules',
-    icon: <Users className="w-4 h-4" />,
-    category: 'operations',
-  },
-  {
-    id: 'hr',
-    route: '/admin/hr',
-    label: 'HR & Personnel',
-    icon: <UserCheck className="w-4 h-4" />,
-    category: 'operations',
   },
   {
     id: 'payroll',
@@ -492,20 +494,31 @@ export const AdminPlatform: React.FC = () => {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar with Dynamic Permission Filter */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Mobile Sidebar Backdrop Overlay */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-2xs z-20 lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Sidebar with Consistent Width & Icon Alignment */}
         <aside
-          className={`fixed inset-y-0 left-0 z-20 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 flex flex-col justify-between ${
+          className={`fixed inset-y-0 left-0 z-30 w-64 min-w-[16rem] max-w-[16rem] shrink-0 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 flex flex-col justify-between select-none ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
           style={{ top: '64px' }}
         >
-          <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-            <div className="px-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-              <span>Navigation ({visibleItems.length}/{ALL_SIDEBAR_ITEMS.length})</span>
-              <Badge variant={isSuperAdmin ? 'danger' : 'neutral'} size="sm">
-                {user?.role}
-              </Badge>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden py-3 px-3 space-y-2.5">
+            <div className="px-2.5 pb-1 flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
+                Navigation
+              </span>
+              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                {visibleItems.length} modules
+              </span>
             </div>
 
             {CATEGORY_METADATA.map((cat) => {
@@ -513,8 +526,8 @@ export const AdminPlatform: React.FC = () => {
               if (catItems.length === 0) return null;
 
               return (
-                <div key={cat.key} className="pt-2 first:pt-0">
-                  <div className="px-3 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <div key={cat.key} className="pt-1.5 first:pt-0">
+                  <div className="px-2.5 pb-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                     {cat.label}
                   </div>
                   <div className="space-y-0.5">
@@ -523,17 +536,27 @@ export const AdminPlatform: React.FC = () => {
                       return (
                         <button
                           key={item.id}
-                          onClick={() => navigateToSection(item.id)}
-                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer text-left ${
+                          onClick={() => {
+                            navigateToSection(item.id);
+                            setIsSidebarOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer text-left group ${
                             isActive
-                              ? 'bg-slate-900 text-white shadow-xs'
+                              ? 'bg-slate-900 text-white font-bold shadow-xs'
                               : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                           }`}
                         >
-                          <span className={isActive ? 'text-white' : 'text-slate-500'}>
+                          <span
+                            className={`w-4 h-4 shrink-0 flex items-center justify-center transition-colors ${
+                              isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-700'
+                            }`}
+                          >
                             {item.icon}
                           </span>
-                          <span>{item.label}</span>
+                          <span className="truncate flex-1">{item.label}</span>
+                          {isActive && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0 ml-auto" />
+                          )}
                         </button>
                       );
                     })}
@@ -541,33 +564,23 @@ export const AdminPlatform: React.FC = () => {
                 </div>
               );
             })}
-
-            {/* Hidden modules notice for restricted roles */}
-            {!isSuperAdmin && (
-              <div className="mt-4 mx-2 p-2.5 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-[11px] text-slate-500 flex items-start gap-2">
-                <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                <span>
-                  {ALL_SIDEBAR_ITEMS.length - visibleItems.length} modules restricted by {user?.role} policy.
-                </span>
-              </div>
-            )}
           </div>
 
           {/* Sidebar footer status */}
           <div className="p-3 border-t border-slate-100 bg-slate-50 text-[11px] text-slate-500">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-slate-700">VERTEX RBAC Engine</span>
-              <span className="flex items-center gap-1 text-emerald-600 font-bold">
+              <span className="font-semibold text-slate-700">VERTEX Console</span>
+              <span className="flex items-center gap-1.5 text-emerald-600 font-bold">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Active
+                Online
               </span>
             </div>
           </div>
         </aside>
 
         {/* Main Content Body with Strict RBAC Route Guard */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto space-y-6">
+        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8">
+          <div className="max-w-7xl mx-auto space-y-6 min-w-0">
             {!hasAccessToCurrentSection ? (
               <UnauthorizedView
                 attemptedPath={activeRoute}
@@ -589,6 +602,8 @@ export const AdminPlatform: React.FC = () => {
 
                 {activeSection === 'promotions' && <AdminPromotionsView />}
 
+                {activeSection === 'managers' && <AdminManagersView />}
+
                 {activeSection !== 'dashboard' &&
                   activeSection !== 'users' &&
                   activeSection !== 'bookings' &&
@@ -596,7 +611,8 @@ export const AdminPlatform: React.FC = () => {
                   activeSection !== 'technicians' &&
                   activeSection !== 'crm' &&
                   activeSection !== 'leads' &&
-                  activeSection !== 'promotions' && (
+                  activeSection !== 'promotions' &&
+                  activeSection !== 'managers' && (
                     <AdminGenericSectionView
                       sectionKey={activeSection}
                       title={getSectionTitle(activeSection)}

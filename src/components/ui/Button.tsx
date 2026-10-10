@@ -20,8 +20,14 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   ...props
 }) => {
+  const isButtonDisabled = Boolean(disabled || isLoading);
+
   const baseClasses =
-    'inline-flex items-center justify-center font-medium transition-all duration-150 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap cursor-pointer select-none';
+    'inline-flex items-center justify-center font-medium transition-all duration-150 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 whitespace-nowrap select-none';
+
+  const stateClasses = isLoading
+    ? 'cursor-wait opacity-90'
+    : 'disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer';
 
   const sizeClasses = {
     sm: 'text-xs px-3 py-1.5 gap-1.5 h-8',
@@ -38,16 +44,17 @@ export const Button: React.FC<ButtonProps> = ({
       'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 focus:ring-slate-400',
     accent:
       'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 focus:ring-blue-600 shadow-sm',
-    danger:
-      'bg-rose-600 text-white hover:bg-rose-700 active:bg-rose-800 focus:ring-rose-600 shadow-sm',
+    danger: isLoading
+      ? 'bg-rose-700 text-white shadow-sm focus:ring-rose-600'
+      : 'bg-rose-600 text-white hover:bg-rose-700 active:bg-rose-800 focus:ring-rose-600 shadow-sm disabled:bg-slate-100 disabled:text-slate-400 disabled:border disabled:border-slate-200 disabled:shadow-none disabled:opacity-100',
     ghost:
       'bg-transparent text-slate-700 hover:bg-slate-100 active:bg-slate-200 focus:ring-slate-400',
   };
 
   return (
     <button
-      className={`${baseClasses} ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
-      disabled={disabled || isLoading}
+      className={`${baseClasses} ${stateClasses} ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
+      disabled={isButtonDisabled}
       {...props}
     >
       {isLoading ? (
@@ -55,7 +62,7 @@ export const Button: React.FC<ButtonProps> = ({
       ) : (
         leftIcon && <span className="shrink-0">{leftIcon}</span>
       )}
-      <span>{children}</span>
+      {children && <span>{children}</span>}
       {!isLoading && rightIcon && <span className="shrink-0">{rightIcon}</span>}
     </button>
   );

@@ -17,6 +17,27 @@ router.use(requireRole(['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'SALES', 'SALES_TEAM'
  */
 router.get('/stats', requirePermission('DASHBOARD_VIEW'), async (req: AuthenticatedRequest, res) => {
   try {
+    const currentUser = req.user;
+
+    // Sales role isolation: Scoped to their own performance and targets
+    if (currentUser && (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM')) {
+      const ownProfile = memoryStore.salesProfiles.find((p) => p.user_id === currentUser.id);
+      const ownLeads = memoryStore.leads.filter((l) => !l.deleted_at && l.assigned_to === currentUser.id);
+      const ownRevenue = ownProfile?.revenue_generated || 0;
+      const ownBookings = ownProfile?.bookings_created || 0;
+
+      return res.json({
+        success: true,
+        scope: 'PERSONAL',
+        data: {
+          totalUsers: ownLeads.length,
+          totalBookings: ownBookings,
+          totalRevenue: ownRevenue,
+          activeTechnicians: 0,
+        },
+      });
+    }
+
     const { pglite } = await getDb();
 
     const [userCount, bookingCount, revenueSum, techCount] = await Promise.all([
@@ -83,6 +104,20 @@ router.get('/users', requirePermission('USER_VIEW'), async (req: AuthenticatedRe
  */
 router.get('/bookings', requirePermission('BOOKING_VIEW'), async (req: AuthenticatedRequest, res) => {
   try {
+    const currentUser = req.user;
+
+    // Sales role isolation: only see bookings created by or assigned to self
+    if (currentUser && (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM')) {
+      const ownBookings = memoryStore.bookings.filter(
+        (b) => !b.deleted_at && ((b as any).sales_rep_id === currentUser.id || (b as any).created_by === currentUser.id)
+      );
+      return res.json({
+        success: true,
+        scope: 'PERSONAL',
+        data: ownBookings,
+      });
+    }
+
     const { pglite } = await getDb();
     const bookingsRes = await pglite.query(`
       SELECT b.*, s.name as service_name, c.name as customer_name, c.phone as customer_phone,
@@ -186,6 +221,28 @@ router.post('/bookings/:id/assign', requirePermission('BOOKING_ASSIGN'), async (
  */
 router.get('/customers', requirePermission('CUSTOMER_VIEW'), async (req: AuthenticatedRequest, res) => {
   try {
+    const currentUser = req.user;
+
+    // Sales role isolation: only see customers assigned to their leads or created by them
+    if (currentUser && (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM')) {
+      const ownLeadPhones = new Set(
+        memoryStore.leads
+          .filter((l) => !l.deleted_at && l.assigned_to === currentUser.id)
+          .map((l) => l.phone.replace(/\D/g, '').slice(-10))
+      );
+      const ownCustomers = memoryStore.users.filter(
+        (u) =>
+          u.role === 'CUSTOMER' &&
+          !u.deleted_at &&
+          (ownLeadPhones.has((u.phone || '').replace(/\D/g, '').slice(-10)) || (u as any).created_by === currentUser.id)
+      );
+      return res.json({
+        success: true,
+        scope: 'PERSONAL',
+        data: ownCustomers,
+      });
+    }
+
     const { pglite } = await getDb();
     const customersRes = await pglite.query(`
       SELECT u.id, u.public_id, u.name, u.email, u.phone, u.city, u.status, u.created_at,

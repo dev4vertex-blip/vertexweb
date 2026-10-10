@@ -20,6 +20,8 @@ import hrRouter from './src/server/routes/hr.js';
 import payrollRouter from './src/server/routes/payroll.js';
 import promotionsRouter from './src/server/routes/promotions.js';
 import locationsRouter from './src/server/routes/locations.js';
+import salesRouter from './src/server/routes/sales.js';
+import managersRouter from './src/server/routes/managers.js';
 
 async function startServer() {
   const app = express();
@@ -124,6 +126,8 @@ async function startServer() {
   app.use('/api/v1/partners', partnersRouter);
   app.use('/api/v1/promotions', promotionsRouter);
   app.use('/api/v1/locations', locationsRouter);
+  app.use('/api/v1/sales', salesRouter);
+  app.use('/api/v1/managers', managersRouter);
   app.use('/api/v1/hr', hrRouter);
   app.use('/api/v1/payroll', payrollRouter);
   app.use('/api/v1', metadataRouter);

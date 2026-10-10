@@ -93,7 +93,11 @@ interface AppContextType {
   clearNotifications: () => void;
   // Toasts
   toasts: ToastMessage[];
-  addToast: (title: string, description?: string, type?: ToastMessage['type']) => void;
+  addToast: (
+    titleOrToast: string | { title: string; message?: string; description?: string; type?: ToastMessage['type'] },
+    description?: string,
+    type?: ToastMessage['type']
+  ) => void;
   removeToast: (id: string) => void;
   // City selection
   selectedCity: string;
@@ -138,9 +142,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [amcContracts, setAmcContracts] = useState<AMCContract[]>(DEMO_AMC_CONTRACTS);
   const [amcVisits, setAmcVisits] = useState<AMCServiceVisit[]>(DEMO_AMC_VISITS);
 
-  const addToast = (title: string, description?: string, type: ToastMessage['type'] = 'info') => {
+  const addToast = (
+    titleOrToast: string | { title: string; message?: string; description?: string; type?: ToastMessage['type'] },
+    description?: string,
+    type: ToastMessage['type'] = 'info'
+  ) => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, title, description, type }]);
+    if (typeof titleOrToast === 'object' && titleOrToast !== null) {
+      const toastTitle = String(titleOrToast.title || '');
+      const toastDescription = titleOrToast.description || titleOrToast.message || '';
+      const toastType = titleOrToast.type || 'info';
+      setToasts((prev) => [...prev, { id, title: toastTitle, description: toastDescription, message: toastDescription, type: toastType }]);
+    } else {
+      setToasts((prev) => [...prev, { id, title: String(titleOrToast || ''), description, message: description, type }]);
+    }
   };
 
   const removeToast = (id: string) => {

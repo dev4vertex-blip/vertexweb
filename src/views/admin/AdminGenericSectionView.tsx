@@ -12,6 +12,14 @@ import { api } from '../../services/api';
 import { LocationItem, LocationFormData } from '../../types/auth';
 import { AdminLeadsView } from './leads/AdminLeadsView';
 import { AdminPromotionsView } from './promotions/AdminPromotionsView';
+import { AdminManagersView } from './managers/AdminManagersView';
+import {
+  OperationsPageHeader,
+  OperationsKpiGrid,
+  OperationsKpiCard,
+  OperationsToolbar,
+  OperationsCard,
+} from './components/OperationsDeskLayout';
 import {
   Search,
   Plus,
@@ -20,6 +28,7 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
+  AlertCircle,
   ArrowUpRight,
   Shield,
   Layers,
@@ -40,6 +49,7 @@ import {
   RefreshCw,
   Navigation,
   Building,
+  Building2,
   Globe,
 } from 'lucide-react';
 
@@ -103,6 +113,65 @@ const INITIAL_SALES_MEMBERS: SalesTeamMember[] = [
   },
 ];
 
+interface OperationsManager {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  territory: string;
+  assignedHub: string;
+  teamSize: number;
+  slaHealth: string;
+  status: 'Active' | 'Inactive';
+}
+
+const INITIAL_MANAGERS: OperationsManager[] = [
+  {
+    id: 'MGR-101',
+    name: 'Priya Sharma',
+    email: 'priya.sharma@vertexservices.in',
+    phone: '+91 98101 22334',
+    territory: 'Delhi NCR Hubs (Central & South)',
+    assignedHub: 'DEL-CENTRAL',
+    teamSize: 24,
+    slaHealth: '99.4%',
+    status: 'Active',
+  },
+  {
+    id: 'MGR-102',
+    name: 'Arunav Sengupta',
+    email: 'arunav.mgr@vertexservices.in',
+    phone: '+91 98300 44551',
+    territory: 'Gurgaon & Manesar Industrial Corridor',
+    assignedHub: 'GGN-CYBER',
+    teamSize: 18,
+    slaHealth: '98.8%',
+    status: 'Active',
+  },
+  {
+    id: 'MGR-103',
+    name: 'Siddharth Pillai',
+    email: 'siddharth.p@vertexservices.in',
+    phone: '+91 98450 77882',
+    territory: 'Bangalore Whitefield & Outer Ring',
+    assignedHub: 'BLR-WHITE',
+    teamSize: 22,
+    slaHealth: '99.1%',
+    status: 'Active',
+  },
+  {
+    id: 'MGR-104',
+    name: 'Nisha Kulkarni',
+    email: 'nisha.k@vertexservices.in',
+    phone: '+91 98210 33221',
+    territory: 'Mumbai Western Suburbs & BKC',
+    assignedHub: 'BOM-WEST',
+    teamSize: 16,
+    slaHealth: '98.5%',
+    status: 'Active',
+  },
+];
+
 export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = ({
   sectionKey,
   title,
@@ -147,6 +216,8 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   // Location Live State
   const [liveLocations, setLiveLocations] = useState<LocationItem[]>([]);
   const [availableStates, setAvailableStates] = useState<any[]>([]);
+  const [locationsSummary, setLocationsSummary] = useState<{ total: number; active: number; states_count: number; total_references: number } | null>(null);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
   const [locationFilterStatus, setLocationFilterStatus] = useState<string>('ALL');
   const [locationFilterState, setLocationFilterState] = useState<string>('');
   const [isLoadingLocations, setIsLoadingLocations] = useState<boolean>(false);
@@ -194,7 +265,13 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   // Category modal & form state
   const [isCreateCategoryModalOpen, setIsCreateCategoryModalOpen] = useState(false);
   const [isEditCategoryModalOpen, setIsEditCategoryModalOpen] = useState(false);
+  const [isDeleteCategoryModalOpen, setIsDeleteCategoryModalOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
+  const [categoryFilterStatus, setCategoryFilterStatus] = useState<string>('ALL');
+  const [categoriesSummary, setCategoriesSummary] = useState<{ total: number; active: number; inactive: number; total_services_covered: number } | null>(null);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [isSubmittingCategory, setIsSubmittingCategory] = useState<boolean>(false);
+  const [categoryFormError, setCategoryFormError] = useState<string | null>(null);
   const [categoryForm, setCategoryForm] = useState({
     name: '',
     code: '',
@@ -266,6 +343,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   // Dedicated Location fetcher responsive to search and filter updates
   const fetchLocations = async () => {
     setIsLoadingLocations(true);
+    setLocationsError(null);
     try {
       const res = await api.getLocations({
         search: searchTerm,
@@ -275,13 +353,44 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
       if (res && res.success) {
         setLiveLocations(res.data);
         if (res.available_states) setAvailableStates(res.available_states);
+        if (res.summary) setLocationsSummary(res.summary);
       }
     } catch (err: any) {
       console.error('Failed to fetch locations:', err);
+      setLocationsError(err.message || 'Unable to load locations from server. Please check your connection and try again.');
     } finally {
       setIsLoadingLocations(false);
     }
   };
+
+  // Dedicated Service Categories fetcher responsive to search and filter updates
+  const fetchServiceCategories = async () => {
+    setIsLoadingLive(true);
+    setCategoriesError(null);
+    try {
+      const res = await api.getServiceCategories({
+        search: searchTerm,
+        status: categoryFilterStatus,
+      });
+      if (res && res.success && Array.isArray(res.data)) {
+        setLiveCategories(res.data);
+        if (res.summary) setCategoriesSummary(res.summary);
+      } else if (Array.isArray(res)) {
+        setLiveCategories(res);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch service categories:', err);
+      setCategoriesError(err.message || 'Unable to load categories from server.');
+    } finally {
+      setIsLoadingLive(false);
+    }
+  };
+
+  useEffect(() => {
+    if (sectionKey === 'categories' || sectionKey === 'services') {
+      fetchServiceCategories();
+    }
+  }, [sectionKey, searchTerm, categoryFilterStatus]);
 
   useEffect(() => {
     if (sectionKey === 'locations') {
@@ -583,94 +692,267 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   };
 
   // Category Management Handlers
+  const handleOpenCreateCategoryModal = () => {
+    setCategoryForm({
+      name: '',
+      code: '',
+      icon: '🛠️',
+      description: '',
+      active: true,
+    });
+    setCategoryFormError(null);
+    setIsCreateCategoryModalOpen(true);
+  };
+
+  const handleOpenEditCategoryModal = (cat: any) => {
+    setSelectedCategory(cat);
+    setCategoryForm({
+      name: cat.name || '',
+      code: cat.code || '',
+      icon: cat.icon || '🛠️',
+      description: cat.description || '',
+      active: cat.active !== false && cat.status !== 'INACTIVE',
+    });
+    setCategoryFormError(null);
+    setIsEditCategoryModalOpen(true);
+  };
+
+  const handleOpenDeleteCategoryModal = (cat: any) => {
+    setSelectedCategory(cat);
+    setCategoryFormError(null);
+    setIsDeleteCategoryModalOpen(true);
+  };
+
+  const handleToggleCategoryStatus = async (cat: any) => {
+    const isCurrentlyActive = cat.active !== false && cat.status !== 'INACTIVE';
+    try {
+      let res;
+      if (isCurrentlyActive) {
+        res = await api.deactivateServiceCategory(cat.id);
+      } else {
+        res = await api.activateServiceCategory(cat.id);
+      }
+      if (res && res.success) {
+        setLiveCategories((prev) =>
+          prev.map((c) =>
+            c.id === cat.id
+              ? {
+                  ...c,
+                  active: !isCurrentlyActive,
+                  status: !isCurrentlyActive ? 'ACTIVE' : 'INACTIVE',
+                }
+              : c
+          )
+        );
+        addToast(
+          `Category ${!isCurrentlyActive ? 'Activated' : 'Deactivated'}`,
+          `Category "${cat.name}" is now ${!isCurrentlyActive ? 'active in service catalog' : 'deactivated/suspended'}.`,
+          'success'
+        );
+        fetchServiceCategories();
+        window.dispatchEvent(new CustomEvent('vertex:categories-updated'));
+      }
+    } catch (err: any) {
+      addToast('Status Update Failed', err.message || 'Failed to update category status', 'error');
+    }
+  };
+
   const handleSaveNewCategory = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!categoryForm.name.trim()) {
+      setCategoryFormError('Category name is required.');
+      return;
+    }
+    setIsSubmittingCategory(true);
+    setCategoryFormError(null);
     try {
       const created = await api.createServiceCategory({
-        name: categoryForm.name,
-        code: categoryForm.code || categoryForm.name.toUpperCase().replace(/\s+/g, '_'),
-        icon: categoryForm.icon,
-        description: categoryForm.description,
+        name: categoryForm.name.trim(),
+        code: categoryForm.code ? categoryForm.code.trim().toUpperCase() : categoryForm.name.trim().toUpperCase().replace(/\s+/g, '_'),
+        icon: categoryForm.icon || '🛠️',
+        description: categoryForm.description || '',
       });
       const newCat = created.data || created;
-      setLiveCategories((prev) => [...prev, newCat]);
+      setLiveCategories((prev) => [newCat, ...prev]);
       setIsCreateCategoryModalOpen(false);
-      addToast({
-        type: 'success',
-        title: 'Category Created',
-        message: `Category "${categoryForm.name}" created successfully.`,
-      });
+      addToast(
+        'Category Created',
+        `Category "${categoryForm.name}" created successfully.`,
+        'success'
+      );
+      fetchServiceCategories();
+      window.dispatchEvent(new CustomEvent('vertex:categories-updated'));
     } catch (err: any) {
-      addToast({
-        type: 'error',
-        title: 'Creation Failed',
-        message: err.message || 'Failed to create category',
-      });
+      setCategoryFormError(err.message || 'Failed to create category.');
+      addToast('Creation Failed', err.message || 'Failed to create category', 'error');
+    } finally {
+      setIsSubmittingCategory(false);
     }
   };
 
   const handleSaveEditCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCategory) return;
+    if (!categoryForm.name.trim()) {
+      setCategoryFormError('Category name is required.');
+      return;
+    }
+    setIsSubmittingCategory(true);
+    setCategoryFormError(null);
     try {
-      await api.updateServiceCategory(selectedCategory.id, {
+      const res = await api.updateServiceCategory(selectedCategory.id, {
+        name: categoryForm.name.trim(),
+        code: categoryForm.code ? categoryForm.code.trim().toUpperCase() : undefined,
+        icon: categoryForm.icon || '🛠️',
+        description: categoryForm.description,
+        active: categoryForm.active,
+      });
+      const updatedCat = res.data || {
+        ...selectedCategory,
         name: categoryForm.name,
         code: categoryForm.code,
         icon: categoryForm.icon,
         description: categoryForm.description,
         active: categoryForm.active,
-      });
+        status: categoryForm.active ? 'ACTIVE' : 'INACTIVE',
+      };
       setLiveCategories((prev) =>
-        prev.map((c) =>
-          c.id === selectedCategory.id
-            ? { ...c, name: categoryForm.name, code: categoryForm.code, icon: categoryForm.icon, description: categoryForm.description, active: categoryForm.active }
-            : c
-        )
+        prev.map((c) => (c.id === selectedCategory.id ? updatedCat : c))
       );
       setIsEditCategoryModalOpen(false);
-      addToast({
-        type: 'success',
-        title: 'Category Updated',
-        message: `Category "${categoryForm.name}" updated.`,
-      });
+      addToast(
+        'Category Updated',
+        `Category "${categoryForm.name}" updated successfully.`,
+        'success'
+      );
+      fetchServiceCategories();
+      window.dispatchEvent(new CustomEvent('vertex:categories-updated'));
     } catch (err: any) {
-      addToast({
-        type: 'error',
-        title: 'Update Failed',
-        message: err.message || 'Failed to update category',
-      });
+      setCategoryFormError(err.message || 'Failed to update category.');
+      addToast('Update Failed', err.message || 'Failed to update category', 'error');
+    } finally {
+      setIsSubmittingCategory(false);
     }
   };
 
-  const handleDeleteCategory = async (id: number | string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete category "${name}"?`)) return;
+  const handleConfirmDeleteCategory = async (forceArchive = false) => {
+    if (!selectedCategory) return;
+    setIsSubmittingCategory(true);
+    setCategoryFormError(null);
     try {
-      await api.deleteServiceCategory(id);
-      setLiveCategories((prev) => prev.filter((c) => c.id !== id));
-      addToast({
-        type: 'success',
-        title: 'Category Deleted',
-        message: `"${name}" removed from categories.`,
-      });
+      const res = await api.deleteServiceCategory(selectedCategory.id, forceArchive);
+      if (res && res.action === 'ARCHIVED') {
+        setLiveCategories((prev) =>
+          prev.map((c) =>
+            c.id === selectedCategory.id
+              ? { ...c, active: false, status: 'INACTIVE', is_archived: true }
+              : c
+          )
+        );
+        addToast(
+          'Category Safely Archived',
+          `Category "${selectedCategory.name}" has active dependencies and was safely archived/deactivated.`,
+          'info'
+        );
+        setIsDeleteCategoryModalOpen(false);
+        setSelectedCategory(null);
+      } else {
+        setLiveCategories((prev) => prev.filter((c) => c.id !== selectedCategory.id));
+        addToast(
+          'Category Deleted',
+          `Category "${selectedCategory.name}" removed from master catalog.`,
+          'success'
+        );
+        setIsDeleteCategoryModalOpen(false);
+        setSelectedCategory(null);
+      }
+      fetchServiceCategories();
+      window.dispatchEvent(new CustomEvent('vertex:categories-updated'));
     } catch (err: any) {
-      addToast({
-        type: 'error',
-        title: 'Deletion Failed',
-        message: err.message || 'Failed to delete category',
-      });
+      const isDependencyBlock =
+        err?.status === 400 ||
+        err?.message?.toLowerCase().includes('contains') ||
+        err?.message?.toLowerCase().includes('dependencies') ||
+        err?.message?.toLowerCase().includes('services');
+
+      setCategoryFormError(err.message || 'Deletion blocked: This category has active dependencies.');
+
+      if (isDependencyBlock) {
+        addToast(
+          'Deletion Blocked by Catalog Dependencies',
+          err.message || `Cannot delete category "${selectedCategory.name}" because active services are assigned to it.`,
+          'warning'
+        );
+      } else {
+        addToast('Deletion Failed', err.message || 'Failed to delete category', 'error');
+      }
+    } finally {
+      setIsSubmittingCategory(false);
     }
   };
 
   // Sales team state
   const [salesMembers, setSalesMembers] = useState<SalesTeamMember[]>(INITIAL_SALES_MEMBERS);
+  const [salesStatusFilter, setSalesStatusFilter] = useState<string>('ALL');
   const [isAddSalesModalOpen, setIsAddSalesModalOpen] = useState(false);
   const [newSalesName, setNewSalesName] = useState('');
   const [newSalesEmail, setNewSalesEmail] = useState('');
   const [newSalesPhone, setNewSalesPhone] = useState('');
   const [newSalesTerritory, setNewSalesTerritory] = useState('Delhi NCR Corporate');
+  const [salesLoading, setSalesLoading] = useState(false);
+  const [liveSalesStats, setLiveSalesStats] = useState<{
+    pipelineTarget: number;
+    achievedVolume: number;
+    totalReps: number;
+    activeReps: number;
+    averageAchievementRate: number;
+    scope?: string;
+  } | null>(null);
+  const [personalSalesQuota, setPersonalSalesQuota] = useState<{
+    monthly_target: number;
+    achieved_volume: number;
+    achievement_percentage: number;
+    territory: string;
+    status: string;
+    active_leads: number;
+    won_deals: number;
+  } | null>(null);
 
-  // Permission check for managing sales team
+  useEffect(() => {
+    if (sectionKey === 'sales-team' || sectionKey === 'sales') {
+      fetchLiveSalesData();
+    }
+  }, [sectionKey, user?.id, user?.role]);
+
+  const fetchLiveSalesData = async () => {
+    setSalesLoading(true);
+    try {
+      if (user?.role === 'SALES' || user?.role === 'SALES_TEAM') {
+        const targetRes = await api.getSalesTargets();
+        if (targetRes?.success && targetRes.data) {
+          setPersonalSalesQuota(targetRes.data);
+        }
+      } else {
+        const teamRes = await api.getSalesTeam();
+        if (teamRes?.success && teamRes.data) {
+          if (Array.isArray(teamRes.data.members)) {
+            setSalesMembers(teamRes.data.members);
+          }
+          if (teamRes.data.stats) {
+            setLiveSalesStats(teamRes.data.stats);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Live sales data fetch notice:', err);
+    } finally {
+      setSalesLoading(false);
+    }
+  };
+
+  // Permission checks
   const canManageSales = canPerformAction('SALES_TEAM_MANAGE');
+  const canManageManagers = user?.role === 'SUPER_ADMIN' || canPerformAction('SALES_TEAM_MANAGE');
 
   const handleToggleSalesStatus = (id: string) => {
     if (!canManageSales) {
@@ -736,20 +1018,134 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
   const renderSectionContent = () => {
     switch (sectionKey) {
       case 'sales-team':
-      case 'sales':
+      case 'sales': {
+        if (user?.role === 'SALES' || user?.role === 'SALES_TEAM') {
+          const myTarget = personalSalesQuota?.monthly_target || 500000;
+          const myAchieved = personalSalesQuota?.achieved_volume || 0;
+          const myRate = personalSalesQuota?.achievement_percentage ?? Math.min(100, Math.round((myAchieved / myTarget) * 1000) / 10);
+
+          return (
+            <div className="space-y-4">
+              <OperationsKpiGrid cols={4}>
+                <OperationsKpiCard
+                  title="My Monthly Target"
+                  value={`₹${myTarget.toLocaleString('en-IN')}`}
+                  subtext="Assigned personal quota"
+                  icon={<DollarSign className="w-5 h-5 text-blue-600" />}
+                  iconBg="bg-blue-50"
+                />
+                <OperationsKpiCard
+                  title="My Achieved Volume"
+                  value={`₹${myAchieved.toLocaleString('en-IN')}`}
+                  subtext="Closed & verified revenue"
+                  icon={<ArrowUpRight className="w-5 h-5 text-emerald-600" />}
+                  iconBg="bg-emerald-50"
+                />
+                <OperationsKpiCard
+                  title="Quota Achievement"
+                  value={`${myRate}%`}
+                  subtext={myRate >= 100 ? 'Target achieved' : `${(100 - myRate).toFixed(1)}% remaining`}
+                  icon={<CheckCircle2 className="w-5 h-5 text-purple-600" />}
+                  iconBg="bg-purple-50"
+                />
+                <OperationsKpiCard
+                  title="My Active Leads"
+                  value={personalSalesQuota?.active_leads || 0}
+                  subtext="Assigned opportunities"
+                  icon={<Users className="w-5 h-5 text-indigo-600" />}
+                  iconBg="bg-indigo-50"
+                />
+              </OperationsKpiGrid>
+
+              <OperationsCard>
+                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h3 className="text-sm font-bold text-slate-900">Personal Sales Allocation</h3>
+                    <p className="text-xs text-slate-500">
+                      Territory: <strong className="text-slate-800">{personalSalesQuota?.territory || 'Delhi NCR'}</strong> • Status: <Badge variant="success" size="sm">{personalSalesQuota?.status || 'Active'}</Badge>
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    leftIcon={<ArrowUpRight className="w-4 h-4" />}
+                    onClick={() => {
+                      if (typeof window !== 'undefined') window.location.href = '/crm/leads';
+                    }}
+                  >
+                    View My Lead Pipeline
+                  </Button>
+                </div>
+              </OperationsCard>
+            </div>
+          );
+        }
+
+        const filteredMembers = salesMembers.filter(
+          (m) =>
+            (salesStatusFilter === 'ALL' || m.status === salesStatusFilter) &&
+            (m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              m.territory.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              m.email.toLowerCase().includes(searchTerm.toLowerCase()))
+        );
+        const activeCount = salesMembers.filter((m) => m.status === 'Active').length;
+        const displayTotalReps = liveSalesStats?.totalReps ?? salesMembers.length;
+        const displayActiveReps = liveSalesStats?.activeReps ?? activeCount;
+        const displayTarget = liveSalesStats?.pipelineTarget ? `₹${liveSalesStats.pipelineTarget.toLocaleString('en-IN')}` : '₹19,50,000';
+        const displayAchieved = liveSalesStats?.achievedVolume ? `₹${liveSalesStats.achievedVolume.toLocaleString('en-IN')}` : '₹16,10,000';
+        const displaySubtext = liveSalesStats?.averageAchievementRate ? `${liveSalesStats.averageAchievementRate}% quota conversion` : '82.5% quota conversion';
+
         return (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <Input
-                placeholder="Filter sales representatives..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                leftIcon={<Search className="w-4 h-4 text-slate-400" />}
-                className="max-w-xs"
+            <OperationsKpiGrid cols={4}>
+              <OperationsKpiCard
+                title={user?.role === 'MANAGER' ? 'Team Representatives' : 'Sales Representatives'}
+                value={displayTotalReps}
+                subtext={user?.role === 'MANAGER' ? `Authorized Scope (${(user as any)?.territory || 'Territory'})` : 'Enrolled pipeline drivers'}
+                icon={<Users className="w-5 h-5 text-blue-600" />}
+                iconBg="bg-blue-50"
               />
+              <OperationsKpiCard
+                title="Active Quota Reps"
+                value={displayActiveReps}
+                subtext="Currently assigned leads"
+                icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                iconBg="bg-emerald-50"
+              />
+              <OperationsKpiCard
+                title={user?.role === 'MANAGER' ? 'Team Pipeline Target' : 'Pipeline Target'}
+                value={displayTarget}
+                subtext="Current month AMC target"
+                icon={<DollarSign className="w-5 h-5 text-purple-600" />}
+                iconBg="bg-purple-50"
+              />
+              <OperationsKpiCard
+                title={user?.role === 'MANAGER' ? 'Team Achieved Volume' : 'Achieved Volume'}
+                value={displayAchieved}
+                subtext={displaySubtext}
+                icon={<ArrowUpRight className="w-5 h-5 text-indigo-600" />}
+                iconBg="bg-indigo-50"
+              />
+            </OperationsKpiGrid>
 
-              <div className="flex items-center gap-2">
-                {canManageSales ? (
+            <OperationsToolbar
+              searchPlaceholder="Filter sales representatives..."
+              searchValue={searchTerm}
+              onSearchChange={setSearchTerm}
+              countBadge={`${filteredMembers.length} Representatives`}
+              filters={
+                <select
+                  value={salesStatusFilter}
+                  onChange={(e) => setSalesStatusFilter(e.target.value)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="Active">Active Only</option>
+                  <option value="Inactive">Inactive Only</option>
+                </select>
+              }
+              actions={
+                canManageSales ? (
                   <Button
                     size="sm"
                     variant="primary"
@@ -761,64 +1157,70 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 ) : (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg text-xs text-slate-500 border border-slate-200">
                     <Lock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Read-Only View ({user?.role})</span>
+                    <span>Read-Only</span>
                   </div>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Staff Member</TableHead>
-                  <TableHead>Territory Jurisdiction</TableHead>
-                  <TableHead>Monthly Target</TableHead>
-                  <TableHead>Achieved Volume</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Admin Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {salesMembers
-                  .filter(
-                    (m) =>
-                      m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                      m.territory.toLowerCase().includes(searchTerm.toLowerCase())
-                  )
-                  .map((member) => (
-                    <TableRow key={member.id}>
-                      <TableCell>
-                        <div className="font-bold text-slate-900">{member.name}</div>
-                        <div className="text-xs text-slate-400 font-mono">{member.email}</div>
-                      </TableCell>
-                      <TableCell className="font-medium text-slate-700">{member.territory}</TableCell>
-                      <TableCell className="font-semibold text-slate-900">{member.amcTarget}</TableCell>
-                      <TableCell className="font-bold text-emerald-600">{member.amcAchieved}</TableCell>
-                      <TableCell>
-                        <Badge variant={member.status === 'Active' ? 'success' : 'neutral'} size="sm">
-                          {member.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {canManageSales ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              size="sm"
-                              variant={member.status === 'Active' ? 'outline' : 'primary'}
-                              onClick={() => handleToggleSalesStatus(member.id)}
-                              className="text-xs py-1 h-7"
-                            >
-                              {member.status === 'Active' ? 'Deactivate' : 'Activate'}
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 italic">No manage clearance</span>
-                        )}
-                      </TableCell>
+            <OperationsCard noPadding>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Staff Member</TableHead>
+                      <TableHead>Territory Jurisdiction</TableHead>
+                      <TableHead>Monthly Target</TableHead>
+                      <TableHead>Achieved Volume</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Admin Actions</TableHead>
                     </TableRow>
-                  ))}
-              </TableBody>
-            </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredMembers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-8 text-slate-500 text-xs">
+                          No sales representatives found matching current filters.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredMembers.map((member) => (
+                        <TableRow key={member.id}>
+                          <TableCell>
+                            <div className="font-bold text-slate-900">{member.name}</div>
+                            <div className="text-xs text-slate-400 font-mono">{member.email}</div>
+                          </TableCell>
+                          <TableCell className="font-medium text-slate-700">{member.territory}</TableCell>
+                          <TableCell className="font-semibold text-slate-900">{member.amcTarget}</TableCell>
+                          <TableCell className="font-bold text-emerald-600">{member.amcAchieved}</TableCell>
+                          <TableCell>
+                            <Badge variant={member.status === 'Active' ? 'success' : 'neutral'} size="sm">
+                              {member.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {canManageSales ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant={member.status === 'Active' ? 'outline' : 'primary'}
+                                  onClick={() => handleToggleSalesStatus(member.id)}
+                                  className="text-xs py-1 h-7"
+                                >
+                                  {member.status === 'Active' ? 'Deactivate' : 'Activate'}
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">No manage clearance</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </OperationsCard>
 
             {/* Modal for adding sales member */}
             <Modal
@@ -908,6 +1310,11 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
             </Modal>
           </div>
         );
+      }
+
+      case 'managers': {
+        return <AdminManagersView />;
+      }
 
       case 'audit-logs':
       case 'audit logs':
@@ -979,16 +1386,9 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
 
       case 'services': {
         const canAnyServiceAction = canEditService || canDeleteService || canActivateService || canDeactivateService;
-        const displayCategoriesList = liveCategories.length > 0 ? liveCategories : [
-          { id: 1, name: 'AC Service & Repair' },
-          { id: 2, name: 'Electrician Services' },
-          { id: 3, name: 'Plumbing Solutions' },
-          { id: 4, name: 'Water Purifier (RO)' },
-          { id: 5, name: 'Carpentry & Furniture Assembly' },
-          { id: 6, name: 'Facility & Office Maintenance' },
-        ];
+        const displayCategoriesList = liveCategories;
 
-        const displayServicesList = (liveServices.length > 0
+        const allServices = (liveServices.length > 0
           ? liveServices.map((s) => ({
               id: s.id,
               raw: s,
@@ -1006,290 +1406,471 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
               { id: 'srv-4', raw: null, name: 'Bathroom Concealed Leakage Detection', cat: 'Plumbing Solutions', price: '₹599', dur: '60 mins', war: '30 Days', status: 'Live' },
               { id: 'srv-5', raw: null, name: 'Copper Filter RO Service & Membrane', cat: 'Water Purifier (RO)', price: '₹899', dur: '45 mins', war: '90 Days', status: 'Live' },
             ]
-        ).filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.cat.toLowerCase().includes(searchTerm.toLowerCase()));
+        );
+
+        const displayServicesList = allServices.filter((s) => s.name.toLowerCase().includes(searchTerm.toLowerCase()) || s.cat.toLowerCase().includes(searchTerm.toLowerCase()));
+        const liveCount = allServices.filter((s) => s.status === 'Live').length;
 
         return (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <Input
-                placeholder="Filter services..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                leftIcon={<Search className="w-4 h-4 text-slate-400" />}
-                className="max-w-xs"
+            <OperationsKpiGrid cols={4}>
+              <OperationsKpiCard
+                title="Service Offerings"
+                value={allServices.length}
+                subtext="Active in customer catalog"
+                icon={<Wrench className="w-5 h-5 text-blue-600" />}
+                iconBg="bg-blue-50"
               />
-              {/* Conditional RBAC: Only authorized roles (e.g. SUPER_ADMIN) see Create Service button */}
-              {canCreateService && (
-                <Button
-                  id="btn-create-service"
-                  size="sm"
-                  variant="primary"
-                  leftIcon={<Plus className="w-4 h-4" />}
-                  onClick={() => {
-                    setServiceForm({
-                      name: '',
-                      category_id: displayCategoriesList[0]?.id || 1,
-                      category_name: displayCategoriesList[0]?.name || 'AC Service & Repair',
-                      base_price: 499,
-                      strike_price: 699,
-                      duration_minutes: 45,
-                      warranty_days: 30,
-                      description: '',
-                    });
-                    setIsCreateServiceModalOpen(true);
-                  }}
-                >
-                  Create Service Catalog Item
-                </Button>
-              )}
-            </div>
+              <OperationsKpiCard
+                title="Live Booking Status"
+                value={liveCount}
+                subtext="Available for checkout"
+                icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                iconBg="bg-emerald-50"
+              />
+              <OperationsKpiCard
+                title="Verticals Covered"
+                value={displayCategoriesList.length}
+                subtext="Across service sectors"
+                icon={<Tag className="w-5 h-5 text-purple-600" />}
+                iconBg="bg-purple-50"
+              />
+              <OperationsKpiCard
+                title="Standard SLA"
+                value="45-90 min"
+                subtext="Average service window"
+                icon={<Clock className="w-5 h-5 text-indigo-600" />}
+                iconBg="bg-indigo-50"
+              />
+            </OperationsKpiGrid>
 
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Service Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Starting Price</TableHead>
-                    <TableHead>Avg Duration</TableHead>
-                    <TableHead>Warranty</TableHead>
-                    <TableHead>Status</TableHead>
-                    {canAnyServiceAction && <TableHead className="text-right">Actions</TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {displayServicesList.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-bold text-slate-900">{s.name}</TableCell>
-                      <TableCell>{s.cat}</TableCell>
-                      <TableCell className="font-extrabold text-slate-900">{s.price}</TableCell>
-                      <TableCell>{s.dur}</TableCell>
-                      <TableCell>{s.war}</TableCell>
-                      <TableCell>
-                        <Badge variant={s.status === 'Live' ? 'success' : 'neutral'} size="sm">
-                          {s.status}
-                        </Badge>
-                      </TableCell>
-                      {/* Conditional RBAC: Only authorized roles (SUPER_ADMIN) see action buttons */}
-                      {canAnyServiceAction && (
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {((s.status === 'Live' && canDeactivateService) || (s.status !== 'Live' && canActivateService)) && (
-                              <Button
-                                id={`btn-toggle-status-${s.id}`}
-                                size="xs"
-                                variant="ghost"
-                                title={s.status === 'Live' ? 'Deactivate Service' : 'Activate Service'}
-                                onClick={() => handleToggleServiceStatus(s.id, s.status === 'Live')}
-                                className={s.status === 'Live' ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}
-                              >
-                                <Power className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                            {canEditService && (
-                              <Button
-                                id={`btn-edit-service-${s.id}`}
-                                size="xs"
-                                variant="ghost"
-                                title="Edit Service"
-                                onClick={() => {
-                                  setSelectedService(s.raw || s);
-                                  setServiceForm({
-                                    name: s.name,
-                                    category_id: s.raw?.category_id || 1,
-                                    category_name: s.cat,
-                                    base_price: Number(String(s.price).replace(/[^\d]/g, '')) || 499,
-                                    strike_price: s.raw?.strike_price || 699,
-                                    duration_minutes: Number(String(s.dur).replace(/[^\d]/g, '')) || 45,
-                                    warranty_days: Number(String(s.war).replace(/[^\d]/g, '')) || 30,
-                                    description: s.raw?.description || '',
-                                  });
-                                  setIsEditServiceModalOpen(true);
-                                }}
-                                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                            {canDeleteService && (
-                              <Button
-                                id={`btn-delete-service-${s.id}`}
-                                size="xs"
-                                variant="ghost"
-                                title="Delete Service"
-                                onClick={() => handleDeleteService(s.id, s.name)}
-                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      )}
+            <OperationsToolbar
+              searchPlaceholder="Filter services by name or category..."
+              searchValue={searchTerm}
+              onSearchChange={setSearchTerm}
+              countBadge={`${displayServicesList.length} Services`}
+              actions={
+                canCreateService ? (
+                  <Button
+                    id="btn-create-service"
+                    size="sm"
+                    variant="primary"
+                    leftIcon={<Plus className="w-4 h-4" />}
+                    onClick={() => {
+                      setServiceForm({
+                        name: '',
+                        category_id: displayCategoriesList[0]?.id || 1,
+                        category_name: displayCategoriesList[0]?.name || 'AC Service & Repair',
+                        base_price: 499,
+                        strike_price: 699,
+                        duration_minutes: 45,
+                        warranty_days: 30,
+                        description: '',
+                      });
+                      setIsCreateServiceModalOpen(true);
+                    }}
+                  >
+                    Create Service
+                  </Button>
+                ) : null
+              }
+            />
+
+            <OperationsCard noPadding>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Service Name</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Starting Price</TableHead>
+                      <TableHead>Avg Duration</TableHead>
+                      <TableHead>Warranty</TableHead>
+                      <TableHead>Status</TableHead>
+                      {canAnyServiceAction && <TableHead className="text-right">Actions</TableHead>}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {displayServicesList.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={canAnyServiceAction ? 7 : 6} className="text-center py-8 text-slate-500 text-xs">
+                          No services found matching current search.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      displayServicesList.map((s) => (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-bold text-slate-900">{s.name}</TableCell>
+                          <TableCell>{s.cat}</TableCell>
+                          <TableCell className="font-extrabold text-slate-900">{s.price}</TableCell>
+                          <TableCell>{s.dur}</TableCell>
+                          <TableCell>{s.war}</TableCell>
+                          <TableCell>
+                            <Badge variant={s.status === 'Live' ? 'success' : 'neutral'} size="sm">
+                              {s.status}
+                            </Badge>
+                          </TableCell>
+                          {canAnyServiceAction && (
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {((s.status === 'Live' && canDeactivateService) || (s.status !== 'Live' && canActivateService)) && (
+                                  <Button
+                                    id={`btn-toggle-status-${s.id}`}
+                                    size="xs"
+                                    variant="ghost"
+                                    title={s.status === 'Live' ? 'Deactivate Service' : 'Activate Service'}
+                                    onClick={() => handleToggleServiceStatus(s.id, s.status === 'Live')}
+                                    className={s.status === 'Live' ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}
+                                  >
+                                    <Power className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                                {canEditService && (
+                                  <Button
+                                    id={`btn-edit-service-${s.id}`}
+                                    size="xs"
+                                    variant="ghost"
+                                    title="Edit Service"
+                                    onClick={() => {
+                                      setSelectedService(s.raw || s);
+                                      setServiceForm({
+                                        name: s.name,
+                                        category_id: s.raw?.category_id || 1,
+                                        category_name: s.cat,
+                                        base_price: Number(String(s.price).replace(/[^\d]/g, '')) || 499,
+                                        strike_price: s.raw?.strike_price || 699,
+                                        duration_minutes: Number(String(s.dur).replace(/[^\d]/g, '')) || 45,
+                                        warranty_days: Number(String(s.war).replace(/[^\d]/g, '')) || 30,
+                                        description: s.raw?.description || '',
+                                      });
+                                      setIsEditServiceModalOpen(true);
+                                    }}
+                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                                {canDeleteService && (
+                                  <Button
+                                    id={`btn-delete-service-${s.id}`}
+                                    size="xs"
+                                    variant="ghost"
+                                    title="Delete Service"
+                                    onClick={() => handleDeleteService(s.id, s.name)}
+                                    className="text-rose-600 hover:text-rose-700 hover:bg-rose-50"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </OperationsCard>
           </div>
         );
       }
 
       case 'categories': {
-        const displayCategories = liveCategories.length > 0 ? liveCategories : [
-          { id: 1, name: 'AC Service & Repair', code: 'AC_COOLING', services: 14, icon: '❄️', active: true },
-          { id: 2, name: 'Electrician Services', code: 'ELECTRICAL', services: 22, icon: '⚡', active: true },
-          { id: 3, name: 'Plumbing Solutions', code: 'PLUMBING', services: 18, icon: '🚰', active: true },
-          { id: 4, name: 'Water Purifier (RO)', code: 'WATER_PURIFIER', services: 9, icon: '💧', active: true },
-          { id: 5, name: 'Carpentry & Furniture Assembly', code: 'CARPENTRY', services: 16, icon: '🪚', active: true },
-          { id: 6, name: 'Facility & Office Maintenance', code: 'FACILITY', services: 12, icon: '🏢', active: true },
-        ];
+        const displayCategories = liveCategories;
 
-        const filteredCategories = displayCategories.filter((c: any) =>
-          c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (c.code && c.code.toLowerCase().includes(searchTerm.toLowerCase()))
+        const isFilterApplied = searchTerm.trim() !== '' || categoryFilterStatus !== 'ALL';
+        const totalCategories = isFilterApplied ? displayCategories.length : (categoriesSummary?.total ?? displayCategories.length);
+        const activeCategories = isFilterApplied
+          ? displayCategories.filter((c: any) => c.active !== false && c.status !== 'INACTIVE').length
+          : (categoriesSummary?.active ?? displayCategories.filter((c: any) => c.active !== false && c.status !== 'INACTIVE').length);
+        const inactiveCategories = isFilterApplied
+          ? displayCategories.filter((c: any) => c.active === false || c.status === 'INACTIVE').length
+          : (categoriesSummary?.inactive ?? displayCategories.filter((c: any) => c.active === false || c.status === 'INACTIVE').length);
+        const totalServicesCovered = displayCategories.reduce(
+          (sum: number, c: any) => sum + (c.services_count ?? c.services ?? 0),
+          0
         );
 
         return (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-              <Input
-                placeholder="Filter categories..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                leftIcon={<Search className="w-4 h-4 text-slate-400" />}
-                className="max-w-xs"
+            <OperationsKpiGrid cols={4}>
+              <OperationsKpiCard
+                title="Total Categories"
+                value={totalCategories}
+                subtext="Registered across platform"
+                icon={<Tag className="w-5 h-5 text-blue-600" />}
+                iconBg="bg-blue-50"
               />
-              {/* Conditional RBAC: Only users with category management permissions (e.g. SUPER_ADMIN) see Create Category button */}
-              {canManageCategories && (
-                <Button
-                  id="btn-create-category"
-                  size="sm"
-                  variant="primary"
-                  leftIcon={<Plus className="w-4 h-4" />}
-                  onClick={() => {
-                    setCategoryForm({
-                      name: '',
-                      code: '',
-                      icon: '🛠️',
-                      description: '',
-                      active: true,
-                    });
-                    setIsCreateCategoryModalOpen(true);
-                  }}
-                >
-                  Create Category
+              <OperationsKpiCard
+                title="Active Verticals"
+                value={activeCategories}
+                subtext="Live for booking & leads"
+                icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                iconBg="bg-emerald-50"
+              />
+              <OperationsKpiCard
+                title="Inactive / Draft"
+                value={inactiveCategories}
+                subtext="Hidden from customer catalog"
+                icon={<AlertCircle className="w-5 h-5 text-slate-500" />}
+                iconBg="bg-slate-100"
+              />
+              <OperationsKpiCard
+                title="Services Grouped"
+                value={totalServicesCovered}
+                subtext="Active linked service SKUs"
+                icon={<Layers className="w-5 h-5 text-indigo-600" />}
+                iconBg="bg-indigo-50"
+              />
+            </OperationsKpiGrid>
+
+            {/* Error Banner if any */}
+            {categoriesError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{categoriesError}</span>
+                </div>
+                <Button size="xs" variant="ghost" onClick={fetchServiceCategories}>
+                  Retry
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredCategories.map((cat: any, i: number) => (
-                <Card key={cat.id || i} className="p-5">
-                  <div className="text-2xl mb-2">{cat.icon || '📦'}</div>
-                  <h3 className="text-sm font-bold text-slate-900">{cat.name}</h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {cat.services !== undefined ? `${cat.services} active catalog offerings` : (cat.description || 'Verified service vertical')}
-                  </p>
-                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                    <Badge variant={cat.active !== false ? 'success' : 'neutral'} size="sm">
-                      {cat.active !== false ? 'Active' : 'Inactive'}
-                    </Badge>
+            <OperationsToolbar
+              searchPlaceholder="Search category name, code, or description..."
+              searchValue={searchTerm}
+              onSearchChange={setSearchTerm}
+              countBadge={`${displayCategories.length} Categories`}
+              filters={
+                <select
+                  id="filter-category-status"
+                  value={categoryFilterStatus}
+                  onChange={(e) => setCategoryFilterStatus(e.target.value)}
+                  aria-label="Filter category status"
+                  className="text-xs font-semibold rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="ACTIVE">Active Only</option>
+                  <option value="INACTIVE">Inactive Only</option>
+                </select>
+              }
+              actions={
+                canManageCategories ? (
+                  <Button
+                    id="btn-create-category"
+                    size="sm"
+                    variant="primary"
+                    leftIcon={<Plus className="w-4 h-4" />}
+                    onClick={handleOpenCreateCategoryModal}
+                  >
+                    Create Category
+                  </Button>
+                ) : null
+              }
+            />
 
-                    {/* Conditional RBAC: Only users with category management permissions (e.g. SUPER_ADMIN) see Edit and Delete buttons */}
-                    {canManageCategories && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          id={`btn-edit-category-${cat.id || i}`}
-                          size="sm"
-                          variant="ghost"
-                          className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                          onClick={() => {
-                            setSelectedCategory(cat);
-                            setCategoryForm({
-                              name: cat.name,
-                              code: cat.code || '',
-                              icon: cat.icon || '🛠️',
-                              description: cat.description || '',
-                              active: cat.active !== false,
-                            });
-                            setIsEditCategoryModalOpen(true);
-                          }}
-                        >
-                          Edit Category
-                        </Button>
-                        <Button
-                          id={`btn-delete-category-${cat.id || i}`}
-                          size="sm"
-                          variant="ghost"
-                          className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 p-1.5"
-                          title="Delete Category"
-                          onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+            {/* Empty State or Categories Grid */}
+            {displayCategories.length === 0 ? (
+              <OperationsCard className="p-12 text-center border-dashed border-slate-300">
+                <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400 mb-3">
+                  <Tag className="w-6 h-6" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-800">No service categories found</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  {isFilterApplied
+                    ? 'No categories match the applied search query or status filter.'
+                    : 'Get started by creating your first service category vertical to group customer offerings.'}
+                </p>
+                {canManageCategories && !isFilterApplied && (
+                  <Button
+                    id="btn-empty-create-category"
+                    size="sm"
+                    variant="primary"
+                    className="mt-4"
+                    leftIcon={<Plus className="w-4 h-4" />}
+                    onClick={handleOpenCreateCategoryModal}
+                  >
+                    Add Category Vertical
+                  </Button>
+                )}
+              </OperationsCard>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {displayCategories.map((cat: any, i: number) => {
+                  const isActive = cat.active !== false && cat.status !== 'INACTIVE';
+                  const servicesCount = cat.services_count ?? cat.services ?? 0;
+                  const depsCount = cat.dependencies?.total ?? 0;
+
+                  return (
+                    <Card key={cat.id || i} className="p-5 flex flex-col justify-between border-slate-200 hover:border-slate-300 transition-colors">
+                      <div>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="text-3xl p-2 bg-slate-50 rounded-xl border border-slate-100">{cat.icon || '📦'}</div>
+                          <div className="flex items-center gap-1.5">
+                            <Badge variant={isActive ? 'success' : 'neutral'} size="sm">
+                              {isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                            {depsCount > 0 && (
+                              <Badge variant="info" size="sm" title={`${depsCount} active references`}>
+                                {depsCount} linked
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+
+                        <h3 className="text-sm font-bold text-slate-900 mt-1">{cat.name}</h3>
+                        <p className="text-[11px] font-mono font-semibold text-slate-400 mt-0.5 tracking-wider uppercase">
+                          {cat.code || 'NO_CODE'}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-2 line-clamp-2 leading-relaxed">
+                          {cat.description || 'Verified service vertical grouped in primary catalog.'}
+                        </p>
                       </div>
-                    )}
-                  </div>
-                </Card>
-              ))}
-            </div>
+
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                        <div className="text-slate-500 font-medium flex items-center gap-1">
+                          <Layers className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{servicesCount} active services</span>
+                        </div>
+
+                        {/* Conditional RBAC: Only users with category management permissions see Edit, Toggle, and Delete */}
+                        {canManageCategories && (
+                          <div className="flex items-center gap-1">
+                            {/* Activate / Deactivate Toggle */}
+                            <Button
+                              id={`btn-toggle-category-status-${cat.id || i}`}
+                              size="sm"
+                              variant="ghost"
+                              className={`p-1.5 ${
+                                isActive
+                                  ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50'
+                                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                              }`}
+                              title={isActive ? 'Deactivate Category' : 'Activate Category'}
+                              onClick={() => handleToggleCategoryStatus(cat)}
+                            >
+                              <Power className="w-3.5 h-3.5" />
+                            </Button>
+
+                            {/* Edit Action */}
+                            <Button
+                              id={`btn-edit-category-${cat.id || i}`}
+                              size="sm"
+                              variant="ghost"
+                              className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 py-1"
+                              onClick={() => handleOpenEditCategoryModal(cat)}
+                            >
+                              Edit
+                            </Button>
+
+                            {/* Delete Action */}
+                            <Button
+                              id={`btn-delete-category-${cat.id || i}`}
+                              size="sm"
+                              variant="danger"
+                              leftIcon={
+                                isSubmittingCategory && selectedCategory?.id === cat.id ? undefined : (
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                )
+                              }
+                              className="text-xs px-2.5 py-1 h-8 font-medium"
+                              title={`Delete ${cat.name}`}
+                              onClick={() => handleOpenDeleteCategoryModal(cat)}
+                              disabled={isSubmittingCategory}
+                              isLoading={isSubmittingCategory && selectedCategory?.id === cat.id}
+                            >
+                              {isSubmittingCategory && selectedCategory?.id === cat.id ? 'Deleting...' : 'Delete'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       }
 
       case 'locations': {
-        const totalHubs = liveLocations.length;
-        const activeHubs = liveLocations.filter((l) => l.status === 'ACTIVE' || l.active).length;
-        const statesCovered = new Set(liveLocations.map((l) => l.state_name || l.state_id)).size;
-        const totalReferences = liveLocations.reduce((sum, l) => sum + (l.usage_count || 0), 0);
+        const isFilterApplied = searchTerm.trim() !== '' || locationFilterStatus !== 'ALL' || locationFilterState !== '';
+        const totalHubs = isFilterApplied ? liveLocations.length : (locationsSummary?.total ?? liveLocations.length);
+        const activeHubs = isFilterApplied
+          ? liveLocations.filter((l) => l.status === 'ACTIVE' || l.active).length
+          : (locationsSummary?.active ?? liveLocations.filter((l) => l.status === 'ACTIVE' || l.active).length);
+        const statesCovered = isFilterApplied
+          ? new Set(liveLocations.map((l) => l.state_name || l.state_id)).size
+          : (locationsSummary?.states_count ?? new Set(liveLocations.map((l) => l.state_name || l.state_id)).size);
+        const totalReferences = isFilterApplied
+          ? liveLocations.reduce((sum, l) => sum + (l.usage_count || 0), 0)
+          : (locationsSummary?.total_references ?? liveLocations.reduce((sum, l) => sum + (l.usage_count || 0), 0));
 
         return (
           <div className="space-y-4">
-            {/* Top Operational Metrics */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card className="p-4">
-                <span className="text-xs text-slate-400 font-semibold uppercase">Total Regional Hubs</span>
-                <div className="text-2xl font-black text-slate-900 mt-1">{totalHubs} Hubs</div>
-                <div className="text-xs text-slate-500 mt-1">Configured Service Centers</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs text-slate-400 font-semibold uppercase">Active Coverage Hubs</span>
-                <div className="text-2xl font-black text-emerald-600 mt-1">{activeHubs} Live</div>
-                <div className="text-xs text-slate-500 mt-1">Accepting customer bookings</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs text-slate-400 font-semibold uppercase">States & UTs Covered</span>
-                <div className="text-2xl font-black text-blue-600 mt-1">{statesCovered} Territories</div>
-                <div className="text-xs text-slate-500 mt-1">Pan-India operational presence</div>
-              </Card>
-              <Card className="p-4">
-                <span className="text-xs text-slate-400 font-semibold uppercase">Linked Platform Records</span>
-                <div className="text-2xl font-black text-indigo-600 mt-1">{totalReferences} Records</div>
-                <div className="text-xs text-slate-500 mt-1">Protected by archival governance</div>
-              </Card>
-            </div>
+            <OperationsKpiGrid cols={4}>
+              <OperationsKpiCard
+                title={isFilterApplied ? 'Filtered Hubs' : 'Total Regional Hubs'}
+                value={`${totalHubs} Hubs`}
+                subtext={isFilterApplied ? 'Matching current criteria' : 'Configured service centers'}
+                icon={<Building2 className="w-5 h-5 text-blue-600" />}
+                iconBg="bg-blue-50"
+              />
+              <OperationsKpiCard
+                title={isFilterApplied ? 'Active in Filter' : 'Active Coverage Hubs'}
+                value={`${activeHubs} Live`}
+                subtext="Accepting customer bookings"
+                icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                iconBg="bg-emerald-50"
+              />
+              <OperationsKpiCard
+                title="States & UTs Covered"
+                value={`${statesCovered} Territories`}
+                subtext="Pan-India operational presence"
+                icon={<MapPin className="w-5 h-5 text-purple-600" />}
+                iconBg="bg-purple-50"
+              />
+              <OperationsKpiCard
+                title="Linked Platform Records"
+                value={`${totalReferences} Records`}
+                subtext="Protected by archival governance"
+                icon={<Shield className="w-5 h-5 text-indigo-600" />}
+                iconBg="bg-indigo-50"
+              />
+            </OperationsKpiGrid>
 
-            {/* Filter and Action Toolbar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
-              <div className="flex flex-1 flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <div className="relative flex-1 min-w-[200px]">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    id="search-locations"
-                    placeholder="Search by hub name, code, city, pincode..."
-                    className="pl-9 text-xs"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+            {/* Error Notification Banner if fetch fails */}
+            {locationsError && (
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{locationsError}</span>
                 </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={fetchLocations}
+                  className="h-7 text-xs bg-white text-rose-700 hover:bg-rose-50 border-rose-300"
+                >
+                  Retry Connection
+                </Button>
+              </div>
+            )}
 
+            <OperationsToolbar
+              searchPlaceholder="Search by hub name, code, city, pincode..."
+              searchValue={searchTerm}
+              onSearchChange={setSearchTerm}
+              countBadge={`${liveLocations.length} Hubs`}
+              filters={
                 <div className="flex items-center gap-2">
                   <select
                     id="filter-location-state"
                     value={locationFilterState}
                     onChange={(e) => setLocationFilterState(e.target.value)}
-                    className="h-9 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    className="h-8 px-2.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:ring-2 focus:ring-slate-900 focus:outline-none"
                   >
                     <option value="">All States ({availableStates.length})</option>
                     {availableStates.map((st: any) => (
@@ -1303,7 +1884,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                     id="filter-location-status"
                     value={locationFilterStatus}
                     onChange={(e) => setLocationFilterStatus(e.target.value)}
-                    className="h-9 px-3 text-xs bg-slate-50 border border-slate-300 rounded-lg text-slate-700 font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    className="h-8 px-2.5 text-xs bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:ring-2 focus:ring-slate-900 focus:outline-none"
                   >
                     <option value="ALL">All Statuses</option>
                     <option value="ACTIVE">Active Only</option>
@@ -1315,17 +1896,16 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                     id="btn-refresh-locations"
                     variant="ghost"
                     size="sm"
-                    className="text-slate-600 hover:text-slate-900 px-2"
+                    className="text-slate-600 hover:text-slate-900 px-2 h-8"
                     title="Refresh Location Hubs"
                     onClick={fetchLocations}
                   >
-                    <RefreshCw className={`w-4 h-4 ${isLoadingLocations ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${isLoadingLocations ? 'animate-spin' : ''}`} />
                   </Button>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-2 self-end sm:self-auto">
-                {canCreateLocation ? (
+              }
+              actions={
+                canCreateLocation ? (
                   <Button
                     id="btn-add-location"
                     variant="primary"
@@ -1340,13 +1920,14 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                     <Lock className="w-3.5 h-3.5 text-slate-400" />
                     <span>Read-Only View ({user?.role})</span>
                   </div>
-                )}
-              </div>
-            </div>
+                )
+              }
+            />
 
             {/* Locations Table */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              <Table>
+            <OperationsCard noPadding>
+              <div className="overflow-x-auto">
+                <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Hub Name & Identifier</TableHead>
@@ -1500,7 +2081,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                               )}
 
                               {/* Toggle Active / Inactive Status */}
-                              {canToggleLocationStatus && !isArchived && (
+                              {canToggleLocationStatus && (
                                 <Button
                                   id={`btn-toggle-location-${loc.id}`}
                                   size="sm"
@@ -1541,8 +2122,9 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                     })
                   )}
                 </TableBody>
-              </Table>
-            </div>
+                </Table>
+              </div>
+            </OperationsCard>
           </div>
         );
       }
@@ -2062,14 +2644,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 value={serviceForm.category_id}
                 onChange={(e) => {
                   const catId = Number(e.target.value);
-                  const selectedCat = (liveCategories.length > 0 ? liveCategories : [
-                    { id: 1, name: 'AC Service & Repair' },
-                    { id: 2, name: 'Electrician Services' },
-                    { id: 3, name: 'Plumbing Solutions' },
-                    { id: 4, name: 'Water Purifier (RO)' },
-                    { id: 5, name: 'Carpentry & Furniture Assembly' },
-                    { id: 6, name: 'Facility & Office Maintenance' },
-                  ]).find((c) => c.id === catId);
+                  const selectedCat = liveCategories.find((c) => c.id === catId);
                   setServiceForm({
                     ...serviceForm,
                     category_id: catId,
@@ -2077,14 +2652,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                   });
                 }}
               >
-                {(liveCategories.length > 0 ? liveCategories : [
-                  { id: 1, name: 'AC Service & Repair' },
-                  { id: 2, name: 'Electrician Services' },
-                  { id: 3, name: 'Plumbing Solutions' },
-                  { id: 4, name: 'Water Purifier (RO)' },
-                  { id: 5, name: 'Carpentry & Furniture Assembly' },
-                  { id: 6, name: 'Facility & Office Maintenance' },
-                ]).map((c) => (
+                {liveCategories.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
@@ -2191,14 +2759,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 value={serviceForm.category_id}
                 onChange={(e) => {
                   const catId = Number(e.target.value);
-                  const selectedCat = (liveCategories.length > 0 ? liveCategories : [
-                    { id: 1, name: 'AC Service & Repair' },
-                    { id: 2, name: 'Electrician Services' },
-                    { id: 3, name: 'Plumbing Solutions' },
-                    { id: 4, name: 'Water Purifier (RO)' },
-                    { id: 5, name: 'Carpentry & Furniture Assembly' },
-                    { id: 6, name: 'Facility & Office Maintenance' },
-                  ]).find((c) => c.id === catId);
+                  const selectedCat = liveCategories.find((c) => c.id === catId);
                   setServiceForm({
                     ...serviceForm,
                     category_id: catId,
@@ -2206,14 +2767,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                   });
                 }}
               >
-                {(liveCategories.length > 0 ? liveCategories : [
-                  { id: 1, name: 'AC Service & Repair' },
-                  { id: 2, name: 'Electrician Services' },
-                  { id: 3, name: 'Plumbing Solutions' },
-                  { id: 4, name: 'Water Purifier (RO)' },
-                  { id: 5, name: 'Carpentry & Furniture Assembly' },
-                  { id: 6, name: 'Facility & Office Maintenance' },
-                ]).map((c) => (
+                {liveCategories.map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
@@ -2302,16 +2856,25 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
         isOpen={isCreateCategoryModalOpen}
         onClose={() => setIsCreateCategoryModalOpen(false)}
         title="Create Service Category"
-        description="Add a top-level category vertical to group service offerings."
+        description="Add a top-level category vertical to group service offerings in the booking engine."
         maxWidth="md"
       >
         <form onSubmit={handleSaveNewCategory} className="space-y-4 pt-2">
+          {categoryFormError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{categoryFormError}</span>
+            </div>
+          )}
+
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Category Name</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Category Name <span className="text-rose-500">*</span>
+            </label>
             <Input
               id="new-category-name"
               required
-              placeholder="e.g. Smart Home & Automation"
+              placeholder="e.g., Smart Home & Automation"
               value={categoryForm.name}
               onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
             />
@@ -2324,7 +2887,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
                 id="new-category-code"
                 placeholder="SMART_HOME"
                 value={categoryForm.code}
-                onChange={(e) => setCategoryForm({ ...categoryForm, code: e.target.value })}
+                onChange={(e) => setCategoryForm({ ...categoryForm, code: e.target.value.toUpperCase() })}
               />
             </div>
             <div>
@@ -2351,11 +2914,23 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsCreateCategoryModalOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsCreateCategoryModalOpen(false)}
+              disabled={isSubmittingCategory}
+            >
               Cancel
             </Button>
-            <Button id="btn-submit-create-category" type="submit" variant="primary" size="sm">
-              Create Category
+            <Button
+              id="btn-submit-create-category"
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSubmittingCategory}
+            >
+              {isSubmittingCategory ? 'Creating...' : 'Create Category'}
             </Button>
           </div>
         </form>
@@ -2366,12 +2941,21 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
         isOpen={isEditCategoryModalOpen}
         onClose={() => setIsEditCategoryModalOpen(false)}
         title="Edit Service Category"
-        description="Update category name, icon, code, or active status."
+        description="Update category name, icon, code, or active status in master registry."
         maxWidth="md"
       >
         <form onSubmit={handleSaveEditCategory} className="space-y-4 pt-2">
+          {categoryFormError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 font-medium flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{categoryFormError}</span>
+            </div>
+          )}
+
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Category Name</label>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Category Name <span className="text-rose-500">*</span>
+            </label>
             <Input
               id="edit-category-name"
               required
@@ -2386,7 +2970,7 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
               <Input
                 id="edit-category-code"
                 value={categoryForm.code}
-                onChange={(e) => setCategoryForm({ ...categoryForm, code: e.target.value })}
+                onChange={(e) => setCategoryForm({ ...categoryForm, code: e.target.value.toUpperCase() })}
               />
             </div>
             <div>
@@ -2424,14 +3008,177 @@ export const AdminGenericSectionView: React.FC<AdminGenericSectionViewProps> = (
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsEditCategoryModalOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditCategoryModalOpen(false)}
+              disabled={isSubmittingCategory}
+            >
               Cancel
             </Button>
-            <Button id="btn-submit-edit-category" type="submit" variant="primary" size="sm">
-              Save Changes
+            <Button
+              id="btn-submit-edit-category"
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSubmittingCategory}
+            >
+              {isSubmittingCategory ? 'Saving Changes...' : 'Save Changes'}
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Delete / Archive Category Modal */}
+      <Modal
+        isOpen={isDeleteCategoryModalOpen}
+        onClose={() => {
+          if (!isSubmittingCategory) {
+            setIsDeleteCategoryModalOpen(false);
+            setCategoryFormError(null);
+          }
+        }}
+        title="Delete Service Category?"
+        description="Verify decommission action in accordance with catalog dependency protection policy."
+        maxWidth="md"
+      >
+        {selectedCategory && (
+          <div className="space-y-4 pt-2">
+            {(selectedCategory.dependencies?.total || selectedCategory.services || 0) > 0 ? (
+              <div className="space-y-3">
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="font-bold text-slate-900 text-sm">
+                      Cannot Hard-Delete: Referenced by active catalog items
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">
+                      Category <span className="font-bold font-mono text-slate-900">{selectedCategory.name} ({selectedCategory.code})</span> is
+                      presently linked to{' '}
+                      <span className="font-bold text-slate-900">
+                        {selectedCategory.dependencies?.services_count ?? selectedCategory.services ?? 0} active services
+                      </span>{' '}
+                      and partner commission tier rules.
+                    </p>
+                    <p className="text-slate-600 leading-relaxed">
+                      To preserve catalog integrity and past order records, this category should be safely{' '}
+                      <span className="text-amber-800 font-semibold underline">ARCHIVED and DEACTIVATED</span>. It will no longer accept new
+                      service listings while keeping existing bookings fully intact.
+                    </p>
+                  </div>
+                </div>
+
+                {categoryFormError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="font-bold">Deletion Blocked: </span>
+                      <span>{categoryFormError}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap justify-end items-center gap-2 pt-3 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsDeleteCategoryModalOpen(false);
+                      setCategoryFormError(null);
+                    }}
+                    disabled={isSubmittingCategory}
+                    className="border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    id="btn-confirm-archive-category"
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white"
+                    onClick={() => handleConfirmDeleteCategory(true)}
+                    disabled={isSubmittingCategory}
+                    isLoading={isSubmittingCategory}
+                  >
+                    {isSubmittingCategory ? 'Archiving...' : 'Safely Archive & Deactivate'}
+                  </Button>
+                  <Button
+                    id="btn-confirm-delete-category"
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    leftIcon={!isSubmittingCategory ? <Trash2 className="w-3.5 h-3.5" /> : undefined}
+                    onClick={() => handleConfirmDeleteCategory(false)}
+                    disabled={isSubmittingCategory}
+                    isLoading={isSubmittingCategory}
+                    title="Attempt permanent deletion"
+                  >
+                    {isSubmittingCategory ? 'Deleting...' : 'Delete Category'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start gap-3">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="font-bold text-slate-900 text-sm">
+                      Permanently Delete Service Category?
+                    </div>
+                    <p className="text-slate-600 leading-relaxed">
+                      Are you sure you want to delete <span className="font-bold text-slate-900">{selectedCategory.name}</span> ({selectedCategory.code})?
+                      This category has 0 active dependencies and will be permanently removed from the master registry.
+                    </p>
+                    <p className="text-rose-700 font-semibold text-[11px]">
+                      This destructive action cannot be undone.
+                    </p>
+                  </div>
+                </div>
+
+                {categoryFormError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="font-bold">Error: </span>
+                      <span>{categoryFormError}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end items-center gap-2 pt-3 border-t border-slate-100">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setIsDeleteCategoryModalOpen(false);
+                      setCategoryFormError(null);
+                    }}
+                    disabled={isSubmittingCategory}
+                    className="border-slate-300 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    id="btn-confirm-delete-category"
+                    type="button"
+                    variant="danger"
+                    size="sm"
+                    leftIcon={!isSubmittingCategory ? <Trash2 className="w-3.5 h-3.5" /> : undefined}
+                    onClick={() => handleConfirmDeleteCategory(false)}
+                    disabled={isSubmittingCategory}
+                    isLoading={isSubmittingCategory}
+                  >
+                    {isSubmittingCategory ? 'Deleting...' : 'Delete Service Category'}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Create Regional Location Modal */}

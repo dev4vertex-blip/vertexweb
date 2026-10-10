@@ -17,6 +17,15 @@ router.get('/', requirePermission('PROMOTION_VIEW'), async (req: AuthenticatedRe
   try {
     const { search, status, type, category } = req.query;
 
+    const today = new Date().toISOString().split('T')[0];
+    // Auto-update expired active promotions
+    for (const p of memoryStore.promotions) {
+      if (!p.deleted_at && p.status === 'ACTIVE' && p.end_date && p.end_date.split('T')[0] < today) {
+        p.status = 'EXPIRED';
+        p.updated_at = new Date().toISOString();
+      }
+    }
+
     let promos = memoryStore.promotions.filter((p) => !p.deleted_at);
 
     // Filter by status if provided and not 'ALL'
@@ -154,10 +163,41 @@ router.post('/', requirePermission('PROMOTION_CREATE'), async (req: Authenticate
       (p) => p.code.toUpperCase() === cleanCode && !p.deleted_at
     );
     if (existing) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         error: `A promotion with code "${cleanCode}" already exists. Please use a unique coupon code.`,
       });
+    }
+
+    // Validate service & category relationship if specific category and service provided
+    if (applicable_categories && applicable_services) {
+      const catVal = Array.isArray(applicable_categories) ? applicable_categories[0] : applicable_categories;
+      const srvVal = Array.isArray(applicable_services) ? applicable_services[0] : applicable_services;
+      if (
+        catVal &&
+        catVal !== 'All' &&
+        catVal !== 'All Categories' &&
+        srvVal &&
+        srvVal !== 'All' &&
+        srvVal !== 'All Services'
+      ) {
+        const foundService = memoryStore.services.find(
+          (s) =>
+            !s.deleted_at &&
+            (String(s.id) === String(srvVal) || s.name.toLowerCase() === String(srvVal).toLowerCase())
+        );
+        const foundCategory = memoryStore.serviceCategories.find(
+          (c) =>
+            !c.deleted_at &&
+            (String(c.id) === String(catVal) || c.name.toLowerCase() === String(catVal).toLowerCase() || c.slug === String(catVal).toLowerCase())
+        );
+        if (foundService && foundCategory && foundService.category_id !== foundCategory.id) {
+          return res.status(400).json({
+            success: false,
+            error: `Selected service "${foundService.name}" does not belong to category "${foundCategory.name}".`,
+          });
+        }
+      }
     }
 
     // Validate discount value
@@ -298,10 +338,41 @@ router.put('/:id', requirePermission('PROMOTION_EDIT'), async (req: Authenticate
       (p) => p.id !== id && p.code.toUpperCase() === cleanCode && !p.deleted_at
     );
     if (duplicate) {
-      return res.status(400).json({
+      return res.status(409).json({
         success: false,
         error: `Another promotion with code "${cleanCode}" already exists. Code must be unique.`,
       });
+    }
+
+    // Validate service & category relationship if specific category and service provided
+    if (applicable_categories !== undefined && applicable_services !== undefined) {
+      const catVal = Array.isArray(applicable_categories) ? applicable_categories[0] : applicable_categories;
+      const srvVal = Array.isArray(applicable_services) ? applicable_services[0] : applicable_services;
+      if (
+        catVal &&
+        catVal !== 'All' &&
+        catVal !== 'All Categories' &&
+        srvVal &&
+        srvVal !== 'All' &&
+        srvVal !== 'All Services'
+      ) {
+        const foundService = memoryStore.services.find(
+          (s) =>
+            !s.deleted_at &&
+            (String(s.id) === String(srvVal) || s.name.toLowerCase() === String(srvVal).toLowerCase())
+        );
+        const foundCategory = memoryStore.serviceCategories.find(
+          (c) =>
+            !c.deleted_at &&
+            (String(c.id) === String(catVal) || c.name.toLowerCase() === String(catVal).toLowerCase() || c.slug === String(catVal).toLowerCase())
+        );
+        if (foundService && foundCategory && foundService.category_id !== foundCategory.id) {
+          return res.status(400).json({
+            success: false,
+            error: `Selected service "${foundService.name}" does not belong to category "${foundCategory.name}".`,
+          });
+        }
+      }
     }
 
     // Validate discount value

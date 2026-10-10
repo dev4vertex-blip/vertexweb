@@ -9,6 +9,14 @@ import { Button } from '../../../components/ui/Button';
 import { Modal } from '../../../components/ui/Modal';
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from '../../../components/ui/Table';
 import {
+  OperationsPageHeader,
+  OperationsKpiGrid,
+  OperationsKpiCard,
+  OperationsToolbar,
+  OperationsStatusTabs,
+  OperationsCard,
+} from '../components/OperationsDeskLayout';
+import {
   Search,
   Plus,
   TrendingUp,
@@ -64,13 +72,27 @@ export const AdminLeadsView: React.FC = () => {
   const [leadFollowups, setLeadFollowups] = useState<LeadFollowupItem[]>([]);
   const [loadingFollowups, setLoadingFollowups] = useState(false);
 
+  // Dynamic Service Categories from Master Catalog
+  interface ServiceCategoryOption {
+    id: number | string;
+    name: string;
+    code?: string;
+    description?: string;
+    active: boolean;
+    sort_order?: number;
+  }
+  const [categories, setCategories] = useState<ServiceCategoryOption[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState<boolean>(false);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [categorySearch, setCategorySearch] = useState<string>('');
+
   // Create Form State
   const [createForm, setCreateForm] = useState({
     customer_name: '',
     customer_phone: '',
     customer_email: '',
     city_name: 'Delhi NCR',
-    service_category: 'AC Service & Repair',
+    service_category: '',
     service_requirement: '',
     source: 'Website Lead',
     priority: 'HIGH' as LeadPriority,
@@ -84,6 +106,7 @@ export const AdminLeadsView: React.FC = () => {
     customer_name: '',
     customer_phone: '',
     customer_email: '',
+    service_category: '',
     service_requirement: '',
     priority: 'HIGH' as LeadPriority,
     estimated_value: '0',
@@ -144,10 +167,86 @@ export const AdminLeadsView: React.FC = () => {
     }
   };
 
+  const fetchActiveCategories = async () => {
+    setCategoriesLoading(true);
+    setCategoriesError(null);
+    try {
+      const res = await api.getServiceCategories({ status: 'ACTIVE' });
+      let rawList: any[] = [];
+      if (res && res.success && Array.isArray(res.data)) {
+        rawList = res.data;
+      } else if (Array.isArray(res)) {
+        rawList = res;
+      } else if (res && Array.isArray((res as any).data)) {
+        rawList = (res as any).data;
+      }
+
+      // Filter active and non-deleted categories strictly
+      const activeList: ServiceCategoryOption[] = rawList
+        .filter((c: any) => !c.deleted_at && c.active !== false && c.is_active !== false && c.status !== 'INACTIVE')
+        .map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          code: c.code,
+          description: c.description,
+          active: c.active !== false && c.is_active !== false,
+          sort_order: c.sort_order ?? 999,
+        }))
+        .sort((a, b) => (a.sort_order || 999) - (b.sort_order || 999) || a.name.localeCompare(b.name));
+
+      setCategories(activeList);
+
+      // If createForm.service_category is empty and active categories are available, initialize it with first active category
+      setCreateForm((prev) => {
+        if (!prev.service_category && activeList.length > 0) {
+          return { ...prev, service_category: activeList[0].name };
+        }
+        return prev;
+      });
+    } catch (err: any) {
+      console.error('Failed to load active service categories:', err);
+      setCategoriesError(err.message || 'Unable to load service categories. Please try again.');
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchLeads();
     fetchSalesUsers();
+    fetchActiveCategories();
   }, []);
+
+  // Fetch latest active categories whenever the Create modal opens
+  useEffect(() => {
+    if (isCreateModalOpen) {
+      setCategorySearch('');
+      fetchActiveCategories();
+    }
+  }, [isCreateModalOpen]);
+
+  // Listen for cross-module category updates
+  useEffect(() => {
+    const handleCategoryUpdate = () => {
+      fetchActiveCategories();
+    };
+    window.addEventListener('vertex:categories-updated', handleCategoryUpdate);
+    return () => {
+      window.removeEventListener('vertex:categories-updated', handleCategoryUpdate);
+    };
+  }, []);
+
+  // Filtered categories for dropdown search
+  const filteredCategories = useMemo(() => {
+    if (!categorySearch.trim()) return categories;
+    const q = categorySearch.trim().toLowerCase();
+    return categories.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.code && c.code.toLowerCase().includes(q)) ||
+        (c.description && c.description.toLowerCase().includes(q))
+    );
+  }, [categories, categorySearch]);
 
   // Filtered Leads
   const filteredLeads = useMemo(() => {
@@ -158,6 +257,7 @@ export const AdminLeadsView: React.FC = () => {
         lead.customer_phone?.includes(searchTerm) ||
         lead.lead_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.service_requirement?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        lead.service_category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.assigned_to_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchesStatus = selectedStatus === 'ALL' || lead.status === selectedStatus;
@@ -196,14 +296,24 @@ export const AdminLeadsView: React.FC = () => {
       return;
     }
 
+    if (!createForm.service_category || !createForm.service_category.trim()) {
+      addToast('Validation Error', 'Please select a valid Service Category.', 'error');
+      return;
+    }
+
     setIsActionSubmitting(true);
     try {
+      const selectedCat = categories.find(
+        (c) => c.name.toLowerCase() === createForm.service_category.trim().toLowerCase()
+      );
+
       const payload = {
         customer_name: createForm.customer_name.trim(),
         customer_phone: cleanPhone,
         customer_email: createForm.customer_email.trim() || undefined,
         city_name: createForm.city_name,
-        service_category: createForm.service_category,
+        service_category: selectedCat ? selectedCat.name : createForm.service_category.trim(),
+        category_id: selectedCat ? selectedCat.id : undefined,
         service_requirement: createForm.service_requirement.trim() || undefined,
         source: createForm.source,
         priority: createForm.priority,
@@ -220,7 +330,7 @@ export const AdminLeadsView: React.FC = () => {
         customer_phone: '',
         customer_email: '',
         city_name: 'Delhi NCR',
-        service_category: 'AC Service & Repair',
+        service_category: categories.length > 0 ? categories[0].name : '',
         service_requirement: '',
         source: 'Website Lead',
         priority: 'HIGH',
@@ -243,6 +353,7 @@ export const AdminLeadsView: React.FC = () => {
       customer_name: lead.customer_name || '',
       customer_phone: lead.customer_phone || '',
       customer_email: lead.customer_email || '',
+      service_category: lead.service_category || '',
       service_requirement: lead.service_requirement || '',
       priority: lead.priority || 'MEDIUM',
       estimated_value: String(lead.estimated_value || 0),
@@ -259,10 +370,16 @@ export const AdminLeadsView: React.FC = () => {
 
     setIsActionSubmitting(true);
     try {
+      const selectedEditCat = categories.find(
+        (c) => c.name.toLowerCase() === editForm.service_category.trim().toLowerCase()
+      );
+
       const payload = {
         customer_name: editForm.customer_name.trim(),
         customer_phone: editForm.customer_phone.replace(/\D/g, ''),
         customer_email: editForm.customer_email.trim() || undefined,
+        service_category: selectedEditCat ? selectedEditCat.name : (editForm.service_category.trim() || undefined),
+        category_id: selectedEditCat ? selectedEditCat.id : undefined,
         service_requirement: editForm.service_requirement.trim() || undefined,
         priority: editForm.priority,
         estimated_value: parseFloat(editForm.estimated_value) || 0,
@@ -400,184 +517,128 @@ export const AdminLeadsView: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Prominent "+ Generate Lead" Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-black text-slate-900 tracking-tight">Sales CRM & Lead Pipeline</h1>
-              <p className="text-xs font-semibold text-slate-600">
-                Generate, qualify, assign, follow up, and convert enterprise & residential leads.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2.5">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchLeads}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-800 bg-white border-slate-300"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </Button>
-
-          {/* Prominent Lead Generation Trigger */}
-          {canCreate ? (
-            <button
-              type="button"
-              id="btn-generate-lead"
-              onClick={() => setIsCreateModalOpen(true)}
-              className="inline-flex items-center gap-2 px-4.5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-sm transition-all cursor-pointer transform hover:-translate-y-0.5"
+      {/* Top Header & Actions */}
+      <OperationsPageHeader
+        title="Sales CRM & Lead Pipeline"
+        subtitle="Generate, qualify, assign, follow up, and convert enterprise & residential leads."
+        icon={<TrendingUp className="w-5 h-5 text-white" />}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchLeads}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 text-xs font-bold text-slate-800 bg-white border-slate-300"
             >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>+ Generate Lead</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 rounded-xl text-xs font-bold text-slate-600 border border-slate-200">
-              <Lock className="w-3.5 h-3.5 text-slate-400" />
-              <span>Generate Lead (Locked for {user?.role})</span>
-            </div>
-          )}
-        </div>
-      </div>
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </Button>
+
+            {canCreate ? (
+              <button
+                type="button"
+                id="btn-generate-lead"
+                onClick={() => setIsCreateModalOpen(true)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg shadow-2xs transition-all cursor-pointer"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>+ Generate Lead</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-lg text-xs font-bold text-slate-600 border border-slate-200">
+                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <span>Read-Only View</span>
+              </div>
+            )}
+          </>
+        }
+      />
 
       {/* KPI Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-4.5 border-slate-200 shadow-xs bg-white">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase text-slate-700 tracking-wider">Total Pipeline</span>
-            <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-700">
-              <TrendingUp className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-2xl font-black text-slate-900 mt-2">{stats.total} Leads</div>
-          <div className="text-xs font-semibold text-slate-600 mt-0.5">
-            Total Value: <span className="font-bold text-slate-900">₹{stats.pipelineValue.toLocaleString('en-IN')}</span>
-          </div>
-        </Card>
+      <OperationsKpiGrid columns={4}>
+        <OperationsKpiCard
+          label="Total Pipeline"
+          value={`${stats.total} Leads`}
+          subtext={
+            <>
+              Total Value:{' '}
+              <span className="font-bold text-slate-900">
+                ₹{stats.pipelineValue.toLocaleString('en-IN')}
+              </span>
+            </>
+          }
+          icon={<TrendingUp className="w-4 h-4" />}
+          variant="indigo"
+        />
+        <OperationsKpiCard
+          label="Active Deals"
+          value={`${stats.inProgressCount} Open`}
+          subtext="Under negotiation & proposals"
+          icon={<Clock className="w-4 h-4" />}
+          variant="amber"
+        />
+        <OperationsKpiCard
+          label="Converted & Won"
+          value={`${stats.wonCount} Deals`}
+          subtext={`₹${stats.wonValue.toLocaleString('en-IN')} Realized Revenue`}
+          icon={<CheckCircle2 className="w-4 h-4" />}
+          variant="emerald"
+        />
+        <OperationsKpiCard
+          label="Win Rate"
+          value={stats.total > 0 ? `${Math.round((stats.wonCount / stats.total) * 100)}%` : '0%'}
+          subtext="Conversion from qualified leads"
+          icon={<ShieldCheck className="w-4 h-4" />}
+          variant="blue"
+        />
+      </OperationsKpiGrid>
 
-        <Card className="p-4.5 border-slate-200 shadow-xs bg-white">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase text-slate-700 tracking-wider">Active Deals</span>
-            <span className="p-1.5 rounded-lg bg-amber-50 text-amber-700">
-              <Clock className="w-4 h-4" />
-            </span>
+      {/* Filters & Search Toolbar with Integrated Horizontal Tabs */}
+      <OperationsToolbar
+        search={{
+          value: searchTerm,
+          onChange: setSearchTerm,
+          placeholder: 'Search by prospect name, phone number, lead #, or requirement...',
+        }}
+        filters={
+          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-bold text-slate-800 shrink-0">
+            <Filter className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span className="whitespace-nowrap">Priority:</span>
+            <select
+              aria-label="Filter by Priority"
+              value={selectedPriority}
+              onChange={(e) => setSelectedPriority(e.target.value)}
+              className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer pr-1"
+            >
+              <option value="ALL">All Priorities</option>
+              <option value="URGENT">Urgent</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
           </div>
-          <div className="text-2xl font-black text-amber-900 mt-2">{stats.inProgressCount} Open</div>
-          <div className="text-xs font-semibold text-slate-600 mt-0.5">Under negotiation & proposals</div>
-        </Card>
+        }
+        tabs={
+          <OperationsStatusTabs
+            tabs={[
+              { key: 'ALL', label: 'All Leads', count: leads.length },
+              { key: 'NEW', label: 'New Inbound', count: leads.filter((l) => l.status === 'NEW').length },
+              { key: 'CONTACTED', label: 'Contacted', count: leads.filter((l) => l.status === 'CONTACTED').length },
+              { key: 'IN_PROGRESS', label: 'In Progress', count: leads.filter((l) => l.status === 'IN_PROGRESS').length },
+              { key: 'QUALIFIED', label: 'Qualified', count: leads.filter((l) => l.status === 'QUALIFIED').length },
+              { key: 'PROPOSAL_SENT', label: 'Proposal Sent', count: leads.filter((l) => l.status === 'PROPOSAL_SENT').length },
+              { key: 'WON', label: 'Won / Converted', count: leads.filter((l) => l.status === 'WON').length },
+              { key: 'LOST', label: 'Lost', count: leads.filter((l) => l.status === 'LOST').length },
+            ]}
+            activeTab={selectedStatus}
+            onChange={setSelectedStatus}
+          />
+        }
+      />
 
-        <Card className="p-4.5 border-slate-200 shadow-xs bg-white">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase text-slate-700 tracking-wider">Converted & Won</span>
-            <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-700">
-              <CheckCircle2 className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-2xl font-black text-emerald-900 mt-2">{stats.wonCount} Deals</div>
-          <div className="text-xs font-bold text-emerald-700 mt-0.5">
-            ₹{stats.wonValue.toLocaleString('en-IN')} Realized Revenue
-          </div>
-        </Card>
-
-        <Card className="p-4.5 border-slate-200 shadow-xs bg-white">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase text-slate-700 tracking-wider">Win Rate</span>
-            <span className="p-1.5 rounded-lg bg-blue-50 text-blue-700">
-              <ShieldCheck className="w-4 h-4" />
-            </span>
-          </div>
-          <div className="text-2xl font-black text-blue-900 mt-2">
-            {stats.total > 0 ? `${Math.round((stats.wonCount / stats.total) * 100)}%` : '0%'}
-          </div>
-          <div className="text-xs font-semibold text-slate-600 mt-0.5">Conversion from qualified leads</div>
-        </Card>
-      </div>
-
-      {/* Filters & Search Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3 shadow-xs">
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Search by prospect name, phone number, lead #, or requirement..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-sm font-semibold text-slate-900 bg-white placeholder:text-slate-500 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600"
-            />
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-bold text-slate-800">
-              <Filter className="w-3.5 h-3.5 text-slate-600" />
-              <span>Priority:</span>
-              <select
-                value={selectedPriority}
-                onChange={(e) => setSelectedPriority(e.target.value)}
-                className="bg-transparent font-bold text-slate-900 focus:outline-none cursor-pointer"
-              >
-                <option value="ALL">All Priorities</option>
-                <option value="URGENT">Urgent</option>
-                <option value="HIGH">High</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="LOW">Low</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Status Pill Filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-          {[
-            { key: 'ALL', label: 'All Leads' },
-            { key: 'NEW', label: 'New Inbound' },
-            { key: 'CONTACTED', label: 'Contacted' },
-            { key: 'IN_PROGRESS', label: 'In Progress' },
-            { key: 'QUALIFIED', label: 'Qualified' },
-            { key: 'PROPOSAL_SENT', label: 'Proposal Sent' },
-            { key: 'WON', label: 'Won / Converted' },
-            { key: 'LOST', label: 'Lost' },
-          ].map((statusTab) => {
-            const count =
-              statusTab.key === 'ALL'
-                ? leads.length
-                : leads.filter((l) => l.status === statusTab.key).length;
-            const isSelected = selectedStatus === statusTab.key;
-            return (
-              <button
-                key={statusTab.key}
-                type="button"
-                onClick={() => setSelectedStatus(statusTab.key)}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-                  isSelected
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                }`}
-              >
-                <span>{statusTab.label}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                    isSelected ? 'bg-white/20 text-white' : 'bg-slate-300 text-slate-800'
-                  }`}
-                >
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Leads Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+      {/* Leads Table Container */}
+      <OperationsCard noPadding className="border border-slate-200">
         {isLoading ? (
           <div className="p-12 text-center text-slate-600 font-semibold flex flex-col items-center gap-2">
             <RefreshCw className="w-6 h-6 animate-spin text-indigo-600" />
@@ -607,34 +668,228 @@ export const AdminLeadsView: React.FC = () => {
             )}
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-slate-50 border-b border-slate-200">
-                <TableHead className="font-extrabold text-slate-900">Lead Info</TableHead>
-                <TableHead className="font-extrabold text-slate-900">Prospect & Contact</TableHead>
-                <TableHead className="font-extrabold text-slate-900">Service Requirement</TableHead>
-                <TableHead className="font-extrabold text-slate-900">Deal Value</TableHead>
-                <TableHead className="font-extrabold text-slate-900">Sales Owner</TableHead>
-                <TableHead className="font-extrabold text-slate-900">Status</TableHead>
-                <TableHead className="font-extrabold text-slate-900 text-right">Workflow Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            {/* Desktop & Tablet Table (Scrolls Horizontally inside its own container without pushing page) */}
+            <div className="hidden md:block overflow-x-auto min-w-0 w-full">
+              <table className="w-full text-left border-collapse min-w-[960px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="w-[14%] min-w-[130px] px-4 py-3.5 text-xs font-extrabold uppercase tracking-wider text-slate-700 text-left">
+                      Lead Info
+                    </th>
+                    <th className="w-[22%] min-w-[200px] px-4 py-3.5 text-xs font-extrabold uppercase tracking-wider text-slate-700 text-left">
+                      Prospect & Contact
+                    </th>
+                    <th className="min-w-[200px] px-4 py-3.5 text-xs font-extrabold uppercase tracking-wider text-slate-700 text-left">
+                      Service Requirement
+                    </th>
+                    <th className="w-[12%] min-w-[110px] px-4 py-3.5 text-xs font-extrabold uppercase tracking-wider text-slate-700 text-left">
+                      Deal Value
+                    </th>
+                    <th className="w-[15%] min-w-[140px] px-4 py-3.5 text-xs font-extrabold uppercase tracking-wider text-slate-700 text-left">
+                      Sales Owner
+                    </th>
+                    <th className="w-[13%] min-w-[130px] px-4 py-3.5 text-xs font-extrabold uppercase tracking-wider text-slate-700 text-left">
+                      Status
+                    </th>
+                    <th className="w-[14%] min-w-[130px] px-4 py-3.5 text-xs font-extrabold uppercase tracking-wider text-slate-700 text-right">
+                      Workflow Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredLeads.map((lead) => {
+                    const isWon = lead.status === 'WON';
+                    const isLost = lead.status === 'LOST';
+
+                    return (
+                      <tr key={lead.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-4 py-3.5 align-top">
+                          <div className="font-mono font-bold text-xs text-indigo-700">
+                            {lead.lead_number}
+                          </div>
+                          <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 mt-1">
+                            <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate">{lead.city_name || 'National'}</span>
+                          </div>
+                          <div className="mt-1.5">
+                            <Badge
+                              variant={
+                                lead.priority === 'URGENT'
+                                  ? 'danger'
+                                  : lead.priority === 'HIGH'
+                                  ? 'warning'
+                                  : 'neutral'
+                              }
+                              size="sm"
+                            >
+                              {lead.priority}
+                            </Badge>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5 align-top">
+                          <div className="font-bold text-slate-900 text-sm leading-snug">
+                            {lead.customer_name}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mt-1">
+                            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="font-mono">{lead.customer_phone}</span>
+                          </div>
+                          {lead.customer_email && (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-0.5 truncate">
+                              <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate">{lead.customer_email}</span>
+                            </div>
+                          )}
+                          <div className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider">
+                            Source: {lead.source || 'Website'}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5 align-top max-w-xs">
+                          <div className="font-bold text-slate-900 text-xs">
+                            {lead.service_category || 'General Service'}
+                          </div>
+                          <div className="text-xs text-slate-600 line-clamp-2 mt-1 font-medium leading-relaxed break-words">
+                            {lead.service_requirement || lead.notes || 'No specific requirement specified.'}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5 align-top">
+                          <div className="font-black text-slate-900 text-sm">
+                            ₹{(Number(lead.estimated_value) || 0).toLocaleString('en-IN')}
+                          </div>
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">
+                            Estimated
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3.5 align-top">
+                          {canAssign ? (
+                            <select
+                              aria-label="Assign Sales Owner"
+                              value={lead.assigned_to_user_id || ''}
+                              onChange={(e) => handleQuickAssign(lead.id, e.target.value)}
+                              className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 cursor-pointer shadow-2xs truncate h-[32px]"
+                            >
+                              <option value="">Unassigned</option>
+                              {salesUsers.map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="text-xs font-bold text-slate-800 py-1.5">
+                              {lead.assigned_to_name || 'Unassigned'}
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3.5 align-top">
+                          <select
+                            aria-label="Lead Status"
+                            value={lead.status}
+                            disabled={!canEdit}
+                            onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
+                            className={`w-full text-xs font-bold rounded-lg px-2.5 py-1.5 border cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-600 shadow-2xs h-[32px] ${
+                              lead.status === 'WON'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                : lead.status === 'LOST'
+                                ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                : lead.status === 'QUALIFIED'
+                                ? 'bg-blue-50 text-blue-800 border-blue-300'
+                                : lead.status === 'PROPOSAL_SENT'
+                                ? 'bg-purple-50 text-purple-800 border-purple-300'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                          >
+                            <option value="NEW">NEW</option>
+                            <option value="CONTACTED">CONTACTED</option>
+                            <option value="IN_PROGRESS">IN PROGRESS</option>
+                            <option value="QUALIFIED">QUALIFIED</option>
+                            <option value="PROPOSAL_SENT">PROPOSAL SENT</option>
+                            <option value="WON">WON</option>
+                            <option value="LOST">LOST</option>
+                          </select>
+                        </td>
+
+                        <td className="px-4 py-3.5 align-top text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* Follow-up Button */}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenFollowup(lead)}
+                              title="Schedule Follow-up / History"
+                              className="p-1.5 rounded-lg border border-slate-200 text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
+                            >
+                              <MessageSquare className="w-4 h-4" />
+                            </button>
+
+                            {/* Convert to Booking Button */}
+                            {!isWon && canConvert && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenConvert(lead)}
+                                title="Convert to Confirmed Booking"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>Convert</span>
+                              </button>
+                            )}
+
+                            {isWon && lead.converted_booking_id && (
+                              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                Booked
+                              </span>
+                            )}
+
+                            {/* Edit Button */}
+                            {canEdit && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(lead)}
+                                title="Edit Lead Details"
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {/* Delete Button */}
+                            {canDelete && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLead(lead)}
+                                title="Delete Lead"
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Lead Cards (Visible on screens < 768px for optimal touch experience) */}
+            <div className="block md:hidden divide-y divide-slate-100">
               {filteredLeads.map((lead) => {
                 const isWon = lead.status === 'WON';
-                const isLost = lead.status === 'LOST';
 
                 return (
-                  <TableRow key={lead.id} className="hover:bg-slate-50/80 transition-colors">
-                    <TableCell>
-                      <div className="font-mono font-bold text-xs text-indigo-700">
-                        {lead.lead_number}
-                      </div>
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-slate-600 mt-0.5">
-                        <MapPin className="w-3 h-3 text-slate-400" />
-                        <span>{lead.city_name || 'National'}</span>
-                      </div>
-                      <div className="mt-1">
+                  <div key={lead.id} className="p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-indigo-700">
+                          {lead.lead_number}
+                        </span>
                         <Badge
                           variant={
                             lead.priority === 'URGENT'
@@ -648,152 +903,142 @@ export const AdminLeadsView: React.FC = () => {
                           {lead.priority}
                         </Badge>
                       </div>
-                    </TableCell>
-
-                    <TableCell>
-                      <div className="font-bold text-slate-900 text-sm">{lead.customer_name}</div>
-                      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mt-0.5">
-                        <Phone className="w-3 h-3 text-slate-500" />
-                        <span className="font-mono">{lead.customer_phone}</span>
-                      </div>
-                      {lead.customer_email && (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-0.5">
-                          <Mail className="w-3 h-3 text-slate-400" />
-                          <span>{lead.customer_email}</span>
-                        </div>
-                      )}
-                      <div className="text-[10px] font-bold text-slate-500 mt-1 uppercase">
-                        Source: {lead.source || 'Website'}
-                      </div>
-                    </TableCell>
-
-                    <TableCell className="max-w-xs">
-                      <div className="font-bold text-slate-900 text-xs">
-                        {lead.service_category || 'General Service'}
-                      </div>
-                      <div className="text-xs text-slate-700 line-clamp-2 mt-0.5 font-medium">
-                        {lead.service_requirement || lead.notes || 'No specific requirement specified.'}
-                      </div>
-                    </TableCell>
-
-                    <TableCell>
                       <div className="font-black text-slate-900 text-sm">
                         ₹{(Number(lead.estimated_value) || 0).toLocaleString('en-IN')}
                       </div>
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Estimated</div>
-                    </TableCell>
+                    </div>
 
-                    <TableCell>
-                      {canAssign ? (
-                        <select
-                          value={lead.assigned_to_user_id || ''}
-                          onChange={(e) => handleQuickAssign(lead.id, e.target.value)}
-                          className="text-xs font-bold text-slate-800 bg-slate-50 border border-slate-300 rounded px-2 py-1 max-w-[140px] focus:outline-none focus:ring-1 focus:ring-indigo-600 cursor-pointer"
-                        >
-                          <option value="">Unassigned</option>
-                          {salesUsers.map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.name}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="text-xs font-bold text-slate-800">
-                          {lead.assigned_to_name || 'Unassigned'}
+                    <div>
+                      <div className="font-bold text-slate-900 text-base">{lead.customer_name}</div>
+                      <div className="flex items-center gap-3 text-xs text-slate-600 mt-1 flex-wrap">
+                        <div className="flex items-center gap-1 font-mono font-semibold text-slate-800">
+                          <Phone className="w-3 h-3 text-slate-400" />
+                          <span>{lead.customer_phone}</span>
                         </div>
-                      )}
-                    </TableCell>
+                        <div className="flex items-center gap-1 font-semibold text-slate-600">
+                          <MapPin className="w-3 h-3 text-slate-400" />
+                          <span>{lead.city_name || 'National'}</span>
+                        </div>
+                      </div>
+                    </div>
 
-                    <TableCell>
-                      <select
-                        value={lead.status}
-                        disabled={!canEdit}
-                        onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
-                        className={`text-xs font-black rounded-lg px-2.5 py-1 border cursor-pointer focus:outline-none ${
-                          lead.status === 'WON'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : lead.status === 'LOST'
-                            ? 'bg-rose-50 text-rose-800 border-rose-300'
-                            : lead.status === 'QUALIFIED'
-                            ? 'bg-blue-50 text-blue-800 border-blue-300'
-                            : lead.status === 'PROPOSAL_SENT'
-                            ? 'bg-purple-50 text-purple-800 border-purple-300'
-                            : 'bg-amber-50 text-amber-800 border-amber-300'
-                        }`}
-                      >
-                        <option value="NEW">NEW</option>
-                        <option value="CONTACTED">CONTACTED</option>
-                        <option value="IN_PROGRESS">IN PROGRESS</option>
-                        <option value="QUALIFIED">QUALIFIED</option>
-                        <option value="PROPOSAL_SENT">PROPOSAL SENT</option>
-                        <option value="WON">WON</option>
-                        <option value="LOST">LOST</option>
-                      </select>
-                    </TableCell>
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
+                      <div className="font-bold text-slate-800">{lead.service_category || 'General Service'}</div>
+                      <div className="text-slate-600 text-[11px] mt-0.5 line-clamp-2">
+                        {lead.service_requirement || lead.notes || 'No requirement specified'}
+                      </div>
+                    </div>
 
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* Follow-up Button */}
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                          Sales Owner
+                        </label>
+                        {canAssign ? (
+                          <select
+                            aria-label="Assign Sales Owner"
+                            value={lead.assigned_to_user_id || ''}
+                            onChange={(e) => handleQuickAssign(lead.id, e.target.value)}
+                            className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg px-2 py-1.5"
+                          >
+                            <option value="">Unassigned</option>
+                            {salesUsers.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="text-xs font-bold text-slate-800 py-1">
+                            {lead.assigned_to_name || 'Unassigned'}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                          Lead Status
+                        </label>
+                        <select
+                          aria-label="Lead Status"
+                          value={lead.status}
+                          disabled={!canEdit}
+                          onChange={(e) => handleStatusChange(lead.id, e.target.value as LeadStatus)}
+                          className="w-full text-xs font-bold rounded-lg px-2 py-1.5 border"
+                        >
+                          <option value="NEW">NEW</option>
+                          <option value="CONTACTED">CONTACTED</option>
+                          <option value="IN_PROGRESS">IN PROGRESS</option>
+                          <option value="QUALIFIED">QUALIFIED</option>
+                          <option value="PROPOSAL_SENT">PROPOSAL SENT</option>
+                          <option value="WON">WON</option>
+                          <option value="LOST">LOST</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Actions row */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleOpenFollowup(lead)}
-                          title="Schedule Follow-up / History"
-                          className="p-1.5 rounded-lg border border-slate-200 text-slate-700 hover:text-indigo-700 hover:bg-indigo-50 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
                         >
                           <MessageSquare className="w-4 h-4" />
                         </button>
-
-                        {/* Convert to Booking Button */}
-                        {!isWon && canConvert && (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenConvert(lead)}
-                            title="Convert to Confirmed Booking"
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                          >
-                            <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
-                            <span>Convert</span>
-                          </button>
-                        )}
-
-                        {isWon && lead.converted_booking_id && (
-                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                            Booked
-                          </span>
-                        )}
-
-                        {/* Edit Button */}
                         {canEdit && (
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(lead)}
-                            title="Edit Lead Details"
-                            className="p-1.5 rounded-lg border border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
                           >
                             <Edit className="w-4 h-4" />
                           </button>
                         )}
-
-                        {/* Delete Button */}
                         {canDelete && (
                           <button
                             type="button"
                             onClick={() => handleDeleteLead(lead)}
-                            title="Delete Lead"
-                            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            className="p-1.5 rounded-lg border border-slate-200 text-slate-400 hover:text-rose-600"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
                       </div>
-                    </TableCell>
-                  </TableRow>
+
+                      {!isWon && canConvert && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenConvert(lead)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs"
+                        >
+                          <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>Convert to Booking</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 );
               })}
-            </TableBody>
-          </Table>
+            </div>
+
+            {/* Table Footer with Record Summary */}
+            <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
+              <span className="font-medium">
+                Showing <span className="font-bold text-slate-900">{filteredLeads.length}</span> of{' '}
+                <span className="font-bold text-slate-900">{leads.length}</span> total leads
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">
+                Pipeline Value in View:{' '}
+                <span className="font-black text-slate-900">
+                  ₹{filteredLeads.reduce((acc, l) => acc + (Number(l.estimated_value) || 0), 0).toLocaleString('en-IN')}
+                </span>
+              </span>
+            </div>
+          </>
         )}
-      </div>
+      </OperationsCard>
 
       {/* CREATE / GENERATE LEAD MODAL */}
       <Modal
@@ -876,21 +1121,89 @@ export const AdminLeadsView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-900 mb-1">
-                Service Category <span className="text-rose-600">*</span>
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label htmlFor="create-lead-service-category" className="block text-xs font-bold uppercase tracking-wide text-slate-900">
+                  Service Category <span className="text-rose-600">*</span>
+                </label>
+                {categories.length > 4 && (
+                  <div className="relative flex items-center">
+                    <Search className="w-3 h-3 absolute left-2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Filter categories..."
+                      value={categorySearch}
+                      onChange={(e) => setCategorySearch(e.target.value)}
+                      className="pl-6 pr-6 py-0.5 text-xs bg-slate-50 text-slate-900 placeholder:text-slate-400 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-600 w-36 sm:w-44"
+                    />
+                    {categorySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setCategorySearch('')}
+                        className="absolute right-1 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                        title="Clear filter"
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <select
+                id="create-lead-service-category"
+                required
                 value={createForm.service_category}
                 onChange={(e) => setCreateForm({ ...createForm, service_category: e.target.value })}
-                className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                disabled={isActionSubmitting || (categoriesLoading && categories.length === 0)}
+                className="w-full px-3.5 py-2.5 text-sm font-semibold text-slate-900 bg-white rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-600 disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
               >
-                <option value="AC Service & Repair">AC Service & Repair (HVAC)</option>
-                <option value="Commercial AMC">Commercial AMC & Facility Contract</option>
-                <option value="Electrician Services">Full Home Electrician Audit</option>
-                <option value="Plumbing Solutions">Plumbing & Concealed Leakages</option>
-                <option value="Water Purifier (RO)">Water Purifier (RO) Contract</option>
-                <option value="Carpentry & Assembly">Carpentry & Office Assembly</option>
+                {categoriesLoading && categories.length === 0 && (
+                  <option value="" disabled>Loading active service categories...</option>
+                )}
+                {!categoriesLoading && categoriesError && categories.length === 0 && (
+                  <option value="" disabled>Failed to load service categories</option>
+                )}
+                {!categoriesLoading && !categoriesError && filteredCategories.length === 0 && (
+                  <option value="" disabled>
+                    {categorySearch ? `No category matching "${categorySearch}"` : 'No active service categories available'}
+                  </option>
+                )}
+                {filteredCategories.length > 0 && (
+                  <>
+                    {!createForm.service_category && (
+                      <option value="" disabled>-- Select Service Category --</option>
+                    )}
+                    {filteredCategories.map((cat) => (
+                      <option key={cat.id} value={cat.name} data-category-id={cat.id}>
+                        {cat.name} {cat.code ? `(${cat.code})` : ''}
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
+
+              {/* Error state with retry */}
+              {categoriesError && (
+                <div className="mt-1.5 flex items-center justify-between text-xs text-rose-600 bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-200">
+                  <div className="flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{categoriesError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchActiveCategories}
+                    className="font-bold underline hover:text-rose-800 cursor-pointer ml-2"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Empty active categories notice */}
+              {!categoriesLoading && !categoriesError && categories.length === 0 && (
+                <p className="mt-1.5 text-xs text-amber-700 bg-amber-50 p-2 rounded-md border border-amber-200 font-medium">
+                  No active categories registered yet. Please create one in <span className="font-bold">Super Admin &gt; Service Categories</span>.
+                </p>
+              )}
             </div>
 
             <div>
@@ -1038,6 +1351,28 @@ export const AdminLeadsView: React.FC = () => {
                 className="w-full px-3 py-2 text-sm font-semibold text-slate-900 bg-white rounded-lg border border-slate-300"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wide text-slate-900 mb-1">
+              Service Category
+            </label>
+            <select
+              value={editForm.service_category}
+              onChange={(e) => setEditForm({ ...editForm, service_category: e.target.value })}
+              className="w-full px-3 py-2 text-sm font-semibold text-slate-900 bg-white rounded-lg border border-slate-300"
+            >
+              {editForm.service_category && !categories.some(c => c.name.toLowerCase() === editForm.service_category.toLowerCase()) && (
+                <option value={editForm.service_category}>
+                  {editForm.service_category} (Current)
+                </option>
+              )}
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.name}>
+                  {cat.name} {cat.code ? `(${cat.code})` : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>

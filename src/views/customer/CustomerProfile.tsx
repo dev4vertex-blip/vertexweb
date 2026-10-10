@@ -12,6 +12,7 @@ import {
   Shield,
   Bell,
   HelpCircle,
+  BookOpen,
   FileText,
   LogOut,
   ChevronRight,
@@ -31,6 +32,7 @@ interface CustomerProfileProps {
   onNavigateToInvoices?: () => void;
   onNavigateToOffers?: () => void;
   onNavigateToReviews?: () => void;
+  onNavigateToFAQ?: () => void;
 }
 
 export const CustomerProfile: React.FC<CustomerProfileProps> = ({
@@ -41,6 +43,7 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
   onNavigateToInvoices,
   onNavigateToOffers,
   onNavigateToReviews,
+  onNavigateToFAQ,
 }) => {
   const { currentCustomer, setCurrentCustomer, setAppRole, addToast } = useApp();
   const { logout } = useAuth();
@@ -289,6 +292,26 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
           <ChevronRight className="w-4 h-4 text-slate-400" />
         </button>
 
+        {onNavigateToFAQ && (
+          <button
+            onClick={onNavigateToFAQ}
+            className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50/80 transition-colors cursor-pointer min-h-[52px]"
+          >
+            <div className="flex items-center gap-3 text-slate-800">
+              <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-bold block">FAQs & Service Policies</span>
+                <span className="text-[11px] text-slate-500">
+                  Bookings, payments, OTPs & technician safety
+                </span>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
+        )}
+
         <button
           onClick={onNavigateToSupport}
           className="w-full p-4 flex items-center justify-between text-left hover:bg-slate-50/80 transition-colors cursor-pointer min-h-[52px]"
@@ -299,7 +322,7 @@ export const CustomerProfile: React.FC<CustomerProfileProps> = ({
             </div>
             <div>
               <span className="text-xs font-bold block">Help & Support</span>
-              <span className="text-[11px] text-slate-500">24x7 Customer care & FAQs</span>
+              <span className="text-[11px] text-slate-500">24x7 Customer care & ticket resolution</span>
             </div>
           </div>
           <ChevronRight className="w-4 h-4 text-slate-400" />

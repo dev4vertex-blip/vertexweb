@@ -38,14 +38,15 @@ const ToastItem: React.FC<{ toast: ToastMessage; onDismiss: () => void }> = ({
   };
 
   const type = toast.type || 'info';
+  const detailText = toast.description || toast.message;
 
   return (
     <div className="pointer-events-auto flex items-start gap-3 p-3.5 bg-white rounded-xl shadow-lg border border-slate-200 animate-in slide-in-from-bottom-2 fade-in">
       <div className="mt-0.5">{icons[type]}</div>
       <div className="flex-1 min-w-0">
         <h5 className="text-xs font-bold text-slate-900">{toast.title}</h5>
-        {toast.description && (
-          <p className="mt-0.5 text-xs text-slate-500 leading-snug">{toast.description}</p>
+        {detailText && (
+          <p className="mt-0.5 text-xs text-slate-500 leading-snug">{detailText}</p>
         )}
       </div>
       <button

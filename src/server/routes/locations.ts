@@ -49,26 +49,58 @@ router.get('/', requirePermission('LOCATION_VIEW'), async (req: AuthenticatedReq
     // Filter by state if provided
     if (state && String(state).trim()) {
       const st = String(state).trim().toLowerCase();
-      locs = locs.filter(
-        (l) =>
+      locs = locs.filter((l) => {
+        const stateObj = memoryStore.states.find((s) => s.id === l.state_id);
+        const stateName = (stateObj ? stateObj.name : l.state_name || '').toLowerCase();
+        const stateCode = (stateObj ? stateObj.code : l.state_code || '').toLowerCase();
+        return (
           String(l.state_id) === st ||
-          (l.state_name && l.state_name.toLowerCase().includes(st)) ||
-          (l.state_code && l.state_code.toLowerCase() === st)
-      );
+          stateName === st ||
+          stateName.includes(st) ||
+          stateCode === st
+        );
+      });
     }
 
-    // Filter by search keyword
+    // Filter by search keyword (checks name, code, city, area, pincode, state)
     if (search && String(search).trim()) {
       const q = String(search).trim().toLowerCase();
-      locs = locs.filter(
-        (l) =>
-          l.name.toLowerCase().includes(q) ||
-          (l.code && l.code.toLowerCase().includes(q)) ||
-          (l.city && l.city.toLowerCase().includes(q)) ||
-          (l.area && l.area.toLowerCase().includes(q)) ||
-          (l.pincode && l.pincode.toLowerCase().includes(q)) ||
-          (l.state_name && l.state_name.toLowerCase().includes(q))
-      );
+      // Intelligent synonym mappings for major Indian metropolitan hubs
+      const cityAliases: Record<string, string[]> = {
+        bengaluru: ['bangalore'],
+        bangalore: ['bengaluru'],
+        gurugram: ['gurgaon'],
+        gurgaon: ['gurugram'],
+        mumbai: ['bombay'],
+        bombay: ['mumbai'],
+        chennai: ['madras'],
+        madras: ['chennai'],
+        kolkata: ['calcutta'],
+        calcutta: ['kolkata'],
+      };
+      const searchTerms = [q, ...(cityAliases[q] || [])];
+
+      locs = locs.filter((l) => {
+        const stateObj = memoryStore.states.find((s) => s.id === l.state_id);
+        const stateName = (stateObj ? stateObj.name : l.state_name || '').toLowerCase();
+        const stateCode = (stateObj ? stateObj.code : l.state_code || '').toLowerCase();
+        const lName = (l.name || '').toLowerCase();
+        const lCode = (l.code || '').toLowerCase();
+        const lCity = (l.city || '').toLowerCase();
+        const lArea = (l.area || '').toLowerCase();
+        const lPin = (l.pincode || '').toLowerCase();
+
+        return searchTerms.some(
+          (term) =>
+            lName.includes(term) ||
+            lCode.includes(term) ||
+            lCity.includes(term) ||
+            lArea.includes(term) ||
+            lPin.includes(term) ||
+            stateName.includes(term) ||
+            stateCode.includes(term)
+        );
+      });
     }
 
     // Enrich with state metadata and dependency counts
@@ -88,10 +120,20 @@ router.get('/', requirePermission('LOCATION_VIEW'), async (req: AuthenticatedReq
     // Sort by tier then name
     enriched.sort((a, b) => a.tier - b.tier || a.name.localeCompare(b.name));
 
+    // Calculate global system metrics across all active non-deleted locations
+    const allLocations = memoryStore.cities.filter((c) => !c.deleted_at);
+    const globalSummary = {
+      total: allLocations.length,
+      active: allLocations.filter((c) => (c.status || (c.active ? 'ACTIVE' : 'INACTIVE')) === 'ACTIVE').length,
+      states_count: new Set(allLocations.map((c) => c.state_id)).size,
+      total_references: allLocations.reduce((sum, c) => sum + getLocationDependencies(c.id).total, 0),
+    };
+
     return res.json({
       success: true,
       data: enriched,
       total: enriched.length,
+      summary: globalSummary,
       available_states: memoryStore.states,
     });
   } catch (err: any) {

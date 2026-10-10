@@ -4,6 +4,7 @@ import { getDb } from '../../db/client.js';
 import { memoryStore, type LeadRecord, type LeadFollowupRecord } from '../../db/memoryStore.js';
 import { authenticateUser, requirePermission, requireAnyPermission, type AuthenticatedRequest } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
+import { getManagerScope } from './managers.js';
 
 const router = express.Router();
 
@@ -33,8 +34,8 @@ router.get(
 
       let leads = [...memoryStore.leads].filter((l) => !l.deleted_at);
 
-      // Role and permission scope
-      // If user has LEAD_VIEW_OWN only and not LEAD_VIEW_ALL or LEAD_VIEW_TEAM
+      // Role and permission scope: Sales users are strictly restricted to their own assigned leads
+      const isSalesUser = currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM';
       const hasViewAll =
         currentUser.role === 'SUPER_ADMIN' ||
         currentUser.role === 'ADMIN' ||
@@ -46,8 +47,22 @@ router.get(
         currentUser.role === 'MANAGER' ||
         currentUser.permissions.includes('LEAD_VIEW_TEAM');
 
-      if (!hasViewAll && !hasViewTeam) {
-        // Restricted to own leads
+      if (isSalesUser) {
+        // Strict personal scope: ignore any query filters attempting to view other users' leads
+        leads = leads.filter((l) => l.assigned_to === currentUser.id);
+      } else if (currentUser.role === 'MANAGER') {
+        // Strict Manager scope: only authorized sales team members or manager's own created leads
+        const scope = getManagerScope(currentUser.id);
+        leads = leads.filter((l) => scope.salesUserIds.includes(l.assigned_to) || l.created_by === currentUser.id);
+        if (assignedFilter && assignedFilter !== 'ALL') {
+          if (!scope.salesUserIds.includes(assignedFilter)) {
+            leads = [];
+          } else {
+            leads = leads.filter((l) => l.assigned_to === assignedFilter);
+          }
+        }
+      } else if (!hasViewAll && !hasViewTeam) {
+        // Non-sales restricted staff
         leads = leads.filter(
           (l) => l.assigned_to === currentUser.id || l.created_by === currentUser.id
         );
@@ -75,8 +90,8 @@ router.get(
         leads = leads.filter((l) => l.lead_source?.toLowerCase() === sourceFilter.toLowerCase());
       }
 
-      // Filter by assigned user
-      if (assignedFilter && assignedFilter !== 'ALL') {
+      // Filter by assigned user (allowed only for managers and admins)
+      if (!isSalesUser && assignedFilter && assignedFilter !== 'ALL') {
         leads = leads.filter((l) => l.assigned_to === assignedFilter);
       }
 
@@ -91,26 +106,38 @@ router.get(
             (l.alternate_phone && l.alternate_phone.includes(search)) ||
             l.public_id.toLowerCase().includes(search) ||
             l.service_interest.toLowerCase().includes(search) ||
+            (l.service_category && l.service_category.toLowerCase().includes(search)) ||
             (l.assigned_to_name && l.assigned_to_name.toLowerCase().includes(search))
         );
       }
 
       const total = leads.length;
       const startIndex = (page - 1) * limit;
-      const paginatedLeads = leads.slice(startIndex, startIndex + limit).map((l) => ({
-        ...l,
-        lead_number: l.lead_number || l.public_id,
-        customer_phone: l.customer_phone || l.phone,
-        service_requirement: l.service_requirement || l.service_interest || l.requirement_details,
-        source: l.source || l.lead_source,
-      }));
+      const paginatedLeads = leads.slice(startIndex, startIndex + limit).map((l) => {
+        const matchedCat = memoryStore.serviceCategories.find(
+          (c) =>
+            !c.deleted_at &&
+            (String(c.id) === String((l as any).category_id) ||
+             String(c.id) === String(l.service_category) ||
+             c.name.toLowerCase() === (l.service_category || '').toLowerCase())
+        );
+        return {
+          ...l,
+          lead_number: l.lead_number || l.public_id,
+          customer_phone: l.customer_phone || l.phone,
+          service_requirement: l.service_requirement || l.service_interest || l.requirement_details,
+          service_category: matchedCat ? matchedCat.name : (l.service_category || 'General Service'),
+          category_id: matchedCat ? matchedCat.id : ((l as any).category_id || null),
+          source: l.source || l.lead_source,
+        };
+      });
 
-      // Compute quick summary metrics
-      const activeCount = memoryStore.leads.filter((l) => !l.deleted_at && l.status === 'ACTIVE').length;
-      const wonCount = memoryStore.leads.filter((l) => !l.deleted_at && l.status === 'WON').length;
-      const lostCount = memoryStore.leads.filter((l) => !l.deleted_at && l.status === 'LOST').length;
-      const pipelineValue = memoryStore.leads
-        .filter((l) => !l.deleted_at && l.status === 'ACTIVE')
+      // Compute quick summary metrics strictly over the SCOPED leads array
+      const activeCount = leads.filter((l) => l.status === 'ACTIVE').length;
+      const wonCount = leads.filter((l) => l.status === 'WON').length;
+      const lostCount = leads.filter((l) => l.status === 'LOST').length;
+      const pipelineValue = leads
+        .filter((l) => l.status === 'ACTIVE')
         .reduce((sum, l) => sum + (Number(l.estimated_value) || 0), 0);
 
       return res.json({
@@ -154,6 +181,25 @@ router.get(
           success: false,
           error: { code: 'LEAD_NOT_FOUND', message: `Lead with ID ${id} not found.` },
         });
+      }
+
+      // Role-based scope protection for individual Sales users and Managers
+      const currentUser = req.user;
+      if (currentUser && (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM')) {
+        if (lead.assigned_to !== currentUser.id && lead.created_by !== currentUser.id) {
+          return res.status(403).json({
+            success: false,
+            error: { code: 'FORBIDDEN', message: 'You do not have permission to view this lead.' },
+          });
+        }
+      } else if (currentUser && currentUser.role === 'MANAGER') {
+        const scope = getManagerScope(currentUser.id);
+        if (!scope.salesUserIds.includes(lead.assigned_to) && lead.created_by !== currentUser.id) {
+          return res.status(403).json({
+            success: false,
+            error: { code: 'FORBIDDEN', message: 'You do not have permission to view leads outside your authorized management scope.' },
+          });
+        }
       }
 
       return res.json({
@@ -204,6 +250,25 @@ router.post('/', requirePermission('LEAD_CREATE'), async (req: AuthenticatedRequ
     const lead_source = req.body.lead_source || req.body.source || 'Inbound Direct';
     const assigned_to = req.body.assigned_to || req.body.assigned_to_user_id;
 
+    // Resolve Service Category against registered active catalog
+    const rawCategoryInput = req.body.category_id ?? req.body.service_category;
+    let resolvedServiceCategory = req.body.service_category;
+    let resolvedCategoryId: number | string | null = req.body.category_id ? Number(req.body.category_id) : null;
+
+    if (rawCategoryInput !== undefined && rawCategoryInput !== null && String(rawCategoryInput).trim()) {
+      const matchedCat = memoryStore.serviceCategories.find(
+        (c) =>
+          !c.deleted_at &&
+          (String(c.id) === String(rawCategoryInput) ||
+           c.name.toLowerCase() === String(rawCategoryInput).toLowerCase() ||
+           (c.code && c.code.toLowerCase() === String(rawCategoryInput).toLowerCase()))
+      );
+      if (matchedCat) {
+        resolvedServiceCategory = matchedCat.name;
+        resolvedCategoryId = matchedCat.id;
+      }
+    }
+
     // 1. Validation
     if (!customer_name || customer_name.trim().length < 2) {
       return res.status(400).json({
@@ -247,11 +312,14 @@ router.post('/', requirePermission('LEAD_CREATE'), async (req: AuthenticatedRequ
       });
     }
 
-    // 3. Resolve assigned staff name
+    // 3. Resolve assigned staff name (Sales users strictly auto-assigned to themselves)
     let assignedStaffName: string | null = null;
     let finalAssignedTo = assigned_to || null;
 
-    if (finalAssignedTo) {
+    if (['SALES', 'SALES_TEAM'].includes(currentUser.role)) {
+      finalAssignedTo = currentUser.id;
+      assignedStaffName = currentUser.name;
+    } else if (finalAssignedTo) {
       const staffUser = memoryStore.users.find(
         (u) => (u.id === finalAssignedTo || u.public_id === finalAssignedTo) && !u.deleted_at
       );
@@ -259,12 +327,6 @@ router.post('/', requirePermission('LEAD_CREATE'), async (req: AuthenticatedRequ
         assignedStaffName = staffUser.name;
         finalAssignedTo = staffUser.id;
       }
-    }
-
-    // Auto-assign to creator if creator is Sales and no assignee specified
-    if (!finalAssignedTo && ['SALES', 'SALES_TEAM'].includes(currentUser.role)) {
-      finalAssignedTo = currentUser.id;
-      assignedStaffName = currentUser.name;
     }
 
     // 4. Generate Public ID
@@ -302,7 +364,8 @@ router.post('/', requirePermission('LEAD_CREATE'), async (req: AuthenticatedRequ
       alternate_phone: alternate_phone ? alternate_phone.trim() : null,
       address: address ? address.trim() : null,
       service_interest: service_interest.trim(),
-      service_category: service_category || 'Commercial HVAC & Electrical',
+      service_category: resolvedServiceCategory || 'General Service',
+      category_id: resolvedCategoryId,
       requirement_details: requirement_details ? requirement_details.trim() : null,
       estimated_value: estimated_value ? Math.max(0, Number(estimated_value)) : 0,
       lead_source: resolvedSource,
@@ -418,6 +481,24 @@ router.put('/:id', requireAnyPermission(['LEAD_EDIT', 'LEAD_UPDATE']), async (re
       });
     }
 
+    // Role-based scope protection for individual Sales users and Managers
+    if (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM') {
+      if (lead.assigned_to !== currentUser.id && lead.created_by !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You do not have permission to modify this lead.' },
+        });
+      }
+    } else if (currentUser.role === 'MANAGER') {
+      const scope = getManagerScope(currentUser.id);
+      if (!scope.salesUserIds.includes(lead.assigned_to) && lead.created_by !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You do not have permission to modify leads outside your authorized management scope.' },
+        });
+      }
+    }
+
     const {
       customer_name,
       company_name,
@@ -452,7 +533,18 @@ router.put('/:id', requireAnyPermission(['LEAD_EDIT', 'LEAD_UPDATE']), async (re
     if (alternate_phone !== undefined) lead.alternate_phone = alternate_phone ? alternate_phone.trim() : null;
     if (address !== undefined) lead.address = address ? address.trim() : null;
     if (service_interest !== undefined) lead.service_interest = service_interest.trim();
-    if (service_category !== undefined) lead.service_category = service_category;
+    const updateCatInput = service_category !== undefined ? service_category : req.body.category_id;
+    if (updateCatInput !== undefined) {
+      const matchedCat = memoryStore.serviceCategories.find(
+        (c) =>
+          !c.deleted_at &&
+          (String(c.id) === String(updateCatInput) ||
+           c.name.toLowerCase() === String(updateCatInput).toLowerCase() ||
+           (c.code && c.code.toLowerCase() === String(updateCatInput).toLowerCase()))
+      );
+      lead.service_category = matchedCat ? matchedCat.name : updateCatInput;
+      lead.category_id = matchedCat ? matchedCat.id : (req.body.category_id ? Number(req.body.category_id) : lead.category_id);
+    }
     if (requirement_details !== undefined) lead.requirement_details = requirement_details;
     if (estimated_value !== undefined) lead.estimated_value = Number(estimated_value);
     if (lead_source !== undefined) lead.lead_source = lead_source;
@@ -517,6 +609,15 @@ router.post('/:id/won', requireAnyPermission(['LEAD_WON', 'LEAD_MARK_WON']), asy
       });
     }
 
+    if (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM') {
+      if (lead.assigned_to !== currentUser.id && lead.created_by !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You do not have permission to mark this lead as won.' },
+        });
+      }
+    }
+
     lead.stage = 'WON';
     lead.status = 'WON';
     lead.loss_reason = null;
@@ -566,6 +667,8 @@ router.post('/:id/lost', requireAnyPermission(['LEAD_LOST', 'LEAD_MARK_LOST']), 
     const currentUser = req.user;
     const { reason, notes } = req.body;
 
+    const lead = memoryStore.leads.find((l) => (l.id === id || l.public_id === id) && !l.deleted_at);
+
     if (!reason || reason.trim().length === 0) {
       return res.status(400).json({
         success: false,
@@ -573,7 +676,6 @@ router.post('/:id/lost', requireAnyPermission(['LEAD_LOST', 'LEAD_MARK_LOST']), 
       });
     }
 
-    const lead = memoryStore.leads.find((l) => (l.id === id || l.public_id === id) && !l.deleted_at);
     if (!lead) {
       return res.status(404).json({
         success: false,
@@ -581,7 +683,14 @@ router.post('/:id/lost', requireAnyPermission(['LEAD_LOST', 'LEAD_MARK_LOST']), 
       });
     }
 
-    lead.stage = 'LOST';
+    if (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM') {
+      if (lead.assigned_to !== currentUser.id && lead.created_by !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You do not have permission to mark this lead as lost.' },
+        });
+      }
+    }
     lead.status = 'LOST';
     lead.loss_reason = reason.trim() + (notes ? ` - ${notes.trim()}` : '');
     lead.updated_at = new Date().toISOString();
@@ -674,6 +783,15 @@ router.post('/:id/assign', requireAnyPermission(['LEAD_ASSIGN', 'LEAD_REASSIGN']
   try {
     const { id } = req.params;
     const currentUser = req.user;
+
+    // Individual Sales users are forbidden from reassigning leads
+    if (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM') {
+      return res.status(403).json({
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'Lead reassignment requires managerial or admin authorization.' },
+      });
+    }
+
     const { assigned_to } = req.body;
 
     const lead = memoryStore.leads.find((l) => (l.id === id || l.public_id === id) && !l.deleted_at);
@@ -682,6 +800,23 @@ router.post('/:id/assign', requireAnyPermission(['LEAD_ASSIGN', 'LEAD_REASSIGN']
         success: false,
         error: { code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found.` },
       });
+    }
+
+    // Manager scope enforcement
+    if (currentUser.role === 'MANAGER') {
+      const scope = getManagerScope(currentUser.id);
+      if (!scope.salesUserIds.includes(lead.assigned_to) && lead.created_by !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Managers may only reassign leads within their authorized management scope.' },
+        });
+      }
+      if (assigned_to && !scope.salesUserIds.includes(assigned_to) && assigned_to !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Managers may only assign leads to sales representatives within their authorized team.' },
+        });
+      }
     }
 
     let staffName: string | null = null;
@@ -739,6 +874,7 @@ router.post('/:id/followups', requirePermission('LEAD_FOLLOWUP_CREATE'), async (
     const { scheduled_date, scheduled_time, followup_type, notes } = req.body;
 
     const lead = memoryStore.leads.find((l) => (l.id === id || l.public_id === id) && !l.deleted_at);
+
     if (!lead) {
       return res.status(404).json({
         success: false,
@@ -746,7 +882,16 @@ router.post('/:id/followups', requirePermission('LEAD_FOLLOWUP_CREATE'), async (
       });
     }
 
-    if (!notes || notes.trim().length === 0) {
+    if (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM') {
+      if (lead.assigned_to !== currentUser.id && lead.created_by !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You do not have permission to schedule followups for this lead.' },
+        });
+      }
+    }
+
+    if (!notes || !notes.trim()) {
       return res.status(400).json({
         success: false,
         error: { code: 'VALIDATION_ERROR', message: 'Followup notes or task details are required.' },
@@ -900,6 +1045,15 @@ router.post('/:id/convert', requirePermission('LEAD_CONVERT'), async (req: Authe
         success: false,
         error: { code: 'LEAD_NOT_FOUND', message: `Lead ${id} not found.` },
       });
+    }
+
+    if (currentUser.role === 'SALES' || currentUser.role === 'SALES_TEAM') {
+      if (lead.assigned_to !== currentUser.id && lead.created_by !== currentUser.id) {
+        return res.status(403).json({
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'You do not have permission to convert this lead.' },
+        });
+      }
     }
 
     // 1. Check if customer already exists with this phone or create new Customer

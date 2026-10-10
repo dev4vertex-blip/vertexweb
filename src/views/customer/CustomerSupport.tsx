@@ -11,9 +11,15 @@ import {
   Send,
   Clock,
   ShieldCheck,
+  ArrowRight,
+  BookOpen,
 } from 'lucide-react';
 
-export const CustomerSupport: React.FC = () => {
+interface CustomerSupportProps {
+  onNavigateToFAQ?: () => void;
+}
+
+export const CustomerSupport: React.FC<CustomerSupportProps> = ({ onNavigateToFAQ }) => {
   const { addToast } = useApp();
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [subject, setSubject] = useState('');
@@ -83,10 +89,22 @@ export const CustomerSupport: React.FC = () => {
 
       {/* FAQs */}
       <Card className="p-5">
-        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2">
-          <HelpCircle className="w-4 h-4 text-slate-700" />
-          <span>Frequently Asked Questions</span>
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+            <HelpCircle className="w-4 h-4 text-slate-700" />
+            <span>Frequently Asked Questions</span>
+          </h3>
+
+          {onNavigateToFAQ && (
+            <button
+              onClick={onNavigateToFAQ}
+              className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer hover:underline"
+            >
+              <span>View Full FAQ Center</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
 
         <div className="divide-y divide-slate-100">
           {faqs.map((faq, idx) => {

@@ -16,6 +16,7 @@ import { CustomerSupport } from './CustomerSupport';
 import { CustomerInvoices } from './CustomerInvoices';
 import { CustomerOffers } from './CustomerOffers';
 import { CustomerReviews } from './CustomerReviews';
+import { CustomerFAQ } from './CustomerFAQ';
 import { ServiceItem, Booking } from '../../types';
 import { CITIES } from '../../data/mockData';
 import {
@@ -44,6 +45,7 @@ export type CustomerScreen =
   | 'addresses'
   | 'notifications'
   | 'support'
+  | 'faq'
   | 'invoices'
   | 'offers'
   | 'reviews';
@@ -184,6 +186,7 @@ export const CustomerApp: React.FC = () => {
             onNavigateToAMC={() => navigateTo('amc')}
             onNavigateToBookings={() => navigateTo('my-bookings')}
             onNavigateToOffers={() => navigateTo('offers')}
+            onNavigateToFAQ={() => navigateTo('faq')}
           />
         )}
 
@@ -255,6 +258,7 @@ export const CustomerApp: React.FC = () => {
             onNavigateToInvoices={() => navigateTo('invoices')}
             onNavigateToOffers={() => navigateTo('offers')}
             onNavigateToReviews={() => navigateTo('reviews')}
+            onNavigateToFAQ={() => navigateTo('faq')}
           />
         )}
 
@@ -262,7 +266,18 @@ export const CustomerApp: React.FC = () => {
 
         {currentScreen === 'notifications' && <CustomerNotifications />}
 
-        {currentScreen === 'support' && <CustomerSupport />}
+        {currentScreen === 'support' && (
+          <CustomerSupport onNavigateToFAQ={() => navigateTo('faq')} />
+        )}
+
+        {currentScreen === 'faq' && (
+          <CustomerFAQ
+            onBack={() => navigateTo('profile')}
+            onNavigateToSupport={() => navigateTo('support')}
+            onNavigateToBookService={() => navigateTo('services')}
+            onNavigateToInvoices={() => navigateTo('invoices')}
+          />
+        )}
 
         {currentScreen === 'invoices' && (
           <CustomerInvoices
@@ -358,7 +373,8 @@ export const CustomerApp: React.FC = () => {
               currentScreen === 'profile' ||
               currentScreen === 'addresses' ||
               currentScreen === 'notifications' ||
-              currentScreen === 'support'
+              currentScreen === 'support' ||
+              currentScreen === 'faq'
                 ? 'text-blue-600'
                 : 'text-slate-500 hover:text-slate-900'
             }`}

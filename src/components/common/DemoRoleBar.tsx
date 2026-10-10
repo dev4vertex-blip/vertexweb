@@ -52,8 +52,8 @@ export const DemoRoleBar: React.FC = () => {
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1.5 font-bold tracking-wide text-blue-400">
           <Layers className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">VERTEX DEV RBAC</span>
-          <span className="sm:hidden">RBAC</span>
+          <span className="hidden sm:inline">VERTEX Workspace Switcher</span>
+          <span className="sm:hidden">Roles</span>
         </div>
         <span className="text-slate-700 hidden md:inline">|</span>
         {isAuthenticated && user ? (

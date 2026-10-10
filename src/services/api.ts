@@ -205,7 +205,13 @@ class ApiService {
   }
 
   // --- Location Management Endpoints ---
-  async getLocations(params?: { search?: string; status?: string; state?: string }): Promise<{ success: boolean; data: LocationItem[]; total: number; available_states: any[] }> {
+  async getLocations(params?: { search?: string; status?: string; state?: string }): Promise<{
+    success: boolean;
+    data: LocationItem[];
+    total: number;
+    available_states: any[];
+    summary?: { total: number; active: number; states_count: number; total_references: number };
+  }> {
     const query = new URLSearchParams();
     if (params?.search) query.append('search', params.search);
     if (params?.status) query.append('status', params.status);
@@ -213,7 +219,13 @@ class ApiService {
 
     const qs = query.toString();
     const endpoint = `/api/v1/locations${qs ? `?${qs}` : ''}`;
-    return this.request<{ success: boolean; data: LocationItem[]; total: number; available_states: any[] }>(endpoint);
+    return this.request<{
+      success: boolean;
+      data: LocationItem[];
+      total: number;
+      available_states: any[];
+      summary?: { total: number; active: number; states_count: number; total_references: number };
+    }>(endpoint);
   }
 
   async getLocation(id: number | string): Promise<{ success: boolean; data: LocationItem }> {
@@ -367,9 +379,13 @@ class ApiService {
     return res.data || [];
   }
 
-  async getServiceCategories(): Promise<any[]> {
-    const res = await this.request<{ success: boolean; data: any[] }>('/api/v1/services/categories');
-    return res.data || [];
+  async getServiceCategories(params?: { search?: string; status?: string }): Promise<{ success: boolean; data: any[]; summary?: any }> {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status && params.status !== 'ALL') query.append('status', params.status);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const res = await this.request<{ success: boolean; data: any[]; summary?: any }>(`/api/v1/services/categories${queryString}`);
+    return res;
   }
 
   async createServiceCategory(data: any): Promise<any> {
@@ -380,8 +396,17 @@ class ApiService {
     return this.request(`/api/v1/services/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   }
 
-  async deleteServiceCategory(id: number | string): Promise<any> {
-    return this.request(`/api/v1/services/categories/${id}`, { method: 'DELETE' });
+  async activateServiceCategory(id: number | string): Promise<any> {
+    return this.request(`/api/v1/services/categories/${id}/activate`, { method: 'POST' });
+  }
+
+  async deactivateServiceCategory(id: number | string): Promise<any> {
+    return this.request(`/api/v1/services/categories/${id}/deactivate`, { method: 'POST' });
+  }
+
+  async deleteServiceCategory(id: number | string, forceArchive?: boolean): Promise<any> {
+    const query = forceArchive ? '?force_archive=true' : '';
+    return this.request(`/api/v1/services/categories/${id}${query}`, { method: 'DELETE' });
   }
 
   async createService(data: any): Promise<any> {
@@ -638,6 +663,100 @@ class ApiService {
     return this.request<{ success: boolean; message: string }>(`/api/v1/promotions/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  // --- Sales Quota & Data Isolation Endpoints ---
+  async getSalesTargets(): Promise<{ success: boolean; scope: 'PERSONAL' | 'TEAM' | 'COMPANY'; data: any }> {
+    return this.request<{ success: boolean; scope: 'PERSONAL' | 'TEAM' | 'COMPANY'; data: any }>('/api/v1/sales/targets');
+  }
+
+  async getSalesPerformance(): Promise<{ success: boolean; scope: 'PERSONAL' | 'TEAM' | 'COMPANY'; data: any }> {
+    return this.request<{ success: boolean; scope: 'PERSONAL' | 'TEAM' | 'COMPANY'; data: any }>('/api/v1/sales/performance');
+  }
+
+  async getSalesPipeline(): Promise<{ success: boolean; scope: 'PERSONAL' | 'AGGREGATE'; data: any }> {
+    return this.request<{ success: boolean; scope: 'PERSONAL' | 'AGGREGATE'; data: any }>('/api/v1/sales/pipeline');
+  }
+
+  async getSalesTeam(): Promise<{ success: boolean; data: { members: any[]; stats: any } }> {
+    return this.request<{ success: boolean; data: { members: any[]; stats: any } }>('/api/v1/sales/team');
+  }
+
+  // --- Managers Management Endpoints ---
+  async getManagers(params?: {
+    search?: string;
+    status?: string;
+    hub?: string;
+    team_scope?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    success: boolean;
+    data: any[];
+    meta: { total: number; page: number; limit: number; totalPages: number };
+    filters: { hubs: string[]; scopes: string[]; statuses: string[] };
+    scope: 'ALL' | 'SELF';
+  }> {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.status && params.status !== 'ALL') query.append('status', params.status);
+    if (params?.hub && params.hub !== 'ALL') query.append('hub', params.hub);
+    if (params?.team_scope && params.team_scope !== 'ALL') query.append('team_scope', params.team_scope);
+    if (params?.page) query.append('page', params.page.toString());
+    if (params?.limit) query.append('limit', params.limit.toString());
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    return this.request(`/api/v1/managers${qs}`);
+  }
+
+  async getManagerById(id: string): Promise<{ success: boolean; data: any }> {
+    return this.request(`/api/v1/managers/${id}`);
+  }
+
+  async createManager(data: {
+    name: string;
+    email: string;
+    phone: string;
+    password?: string;
+    city_id?: number;
+    assigned_hub: string;
+    team_scope: string;
+    assigned_region?: string;
+    department?: string;
+  }): Promise<{ success: boolean; data: any; message: string }> {
+    return this.request('/api/v1/managers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateManager(
+    id: string,
+    data: Partial<{
+      name: string;
+      email: string;
+      phone: string;
+      status: string;
+      city_id: number;
+      assigned_hub: string;
+      team_scope: string;
+      assigned_region: string;
+      department: string;
+    }>
+  ): Promise<{ success: boolean; data: any; message: string }> {
+    return this.request(`/api/v1/managers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteManager(id: string): Promise<{ success: boolean; message: string; data?: any }> {
+    return this.request(`/api/v1/managers/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getManagerDependencies(id: string): Promise<{ success: boolean; data: any }> {
+    return this.request(`/api/v1/managers/${id}/dependencies`);
   }
 }
 

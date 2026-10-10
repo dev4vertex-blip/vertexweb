@@ -25,6 +25,7 @@ import {
   Tv,
   Building2,
   Wind,
+  HelpCircle,
 } from 'lucide-react';
 
 interface CustomerHomeProps {
@@ -33,6 +34,7 @@ interface CustomerHomeProps {
   onNavigateToAMC: () => void;
   onNavigateToBookings: () => void;
   onNavigateToOffers?: () => void;
+  onNavigateToFAQ?: () => void;
 }
 
 export const CustomerHome: React.FC<CustomerHomeProps> = ({
@@ -41,6 +43,7 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
   onNavigateToAMC,
   onNavigateToBookings,
   onNavigateToOffers,
+  onNavigateToFAQ,
 }) => {
   const { currentCustomer, selectedCity, setSelectedCity, bookings } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
@@ -383,6 +386,31 @@ export const CustomerHome: React.FC<CustomerHomeProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Frequently Asked Questions Strip */}
+      {onNavigateToFAQ && (
+        <div className="p-4 rounded-2xl bg-slate-100/80 border border-slate-200/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white text-blue-600 flex items-center justify-center shrink-0 shadow-2xs border border-slate-200">
+              <HelpCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">Questions about Bookings, OTPs or Payments?</h4>
+              <p className="text-[11px] text-slate-500">
+                Browse our verified Customer FAQs for transparent pricing, cancellation policies, and safety rules.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onNavigateToFAQ}
+            className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer shrink-0 py-1.5 px-3 rounded-lg hover:bg-blue-50 transition-colors"
+          >
+            <span>Explore FAQs & Policies</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
