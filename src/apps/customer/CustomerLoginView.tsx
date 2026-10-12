@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { VertexLogo } from '../../components/common/VertexLogo';
 import { Button } from '../../components/ui/Button';
-import { isDemoLoginEnabled } from '../../shared/config';
+import { api } from '../../services/api';
 import { Phone, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight, Shield } from 'lucide-react';
 
 interface CustomerLoginViewProps {
@@ -14,14 +14,13 @@ export const CustomerLoginView: React.FC<CustomerLoginViewProps> = ({ onSuccess 
   const { loginWithOtp } = useAuth();
   const { addToast, setAppRole } = useApp();
 
-  const demoEnabled = isDemoLoginEnabled();
-  const [phone, setPhone] = useState(demoEnabled ? '9999990002' : '');
+  const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState(false);
-  const [otp, setOtp] = useState(demoEnabled ? '1234' : '');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     const cleanPhone = phone.replace(/\D/g, '');
@@ -29,13 +28,17 @@ export const CustomerLoginView: React.FC<CustomerLoginViewProps> = ({ onSuccess 
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
-    setOtpStep(true);
-    if (demoEnabled) {
-      setOtp('1234');
-      addToast('OTP Sent', 'Development OTP: 1234 (Test simulation)', 'info');
-    } else {
+    setLoading(true);
+    try {
+      await api.sendOtp(cleanPhone);
+      setOtpStep(true);
       setOtp('');
       addToast('OTP Sent', `Verification code sent to +91 ${cleanPhone.slice(-10)}`, 'info');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send verification code.';
+      setErrorMessage(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -48,6 +51,7 @@ export const CustomerLoginView: React.FC<CustomerLoginViewProps> = ({ onSuccess 
         phone,
         otp,
         role: 'CUSTOMER',
+        platform: 'CUSTOMER',
       });
       setAppRole('customer');
       addToast('Welcome to VERTEX', `Logged in as ${user.name}`, 'success');
@@ -72,13 +76,6 @@ export const CustomerLoginView: React.FC<CustomerLoginViewProps> = ({ onSuccess 
         <p className="mt-1 text-sm text-slate-600">
           Book certified home repairs, appliance service, and AMC protection plans
         </p>
-
-        {demoEnabled && (
-          <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium border border-blue-200">
-            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-            <span>Development Mode: Test Login Active</span>
-          </div>
-        )}
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
@@ -113,21 +110,13 @@ export const CustomerLoginView: React.FC<CustomerLoginViewProps> = ({ onSuccess 
                 </div>
               </div>
 
-              {demoEnabled && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex items-center justify-between">
-                  <span>Demo Customer: 9999990002</span>
-                  <button
-                    type="button"
-                    onClick={() => setPhone('9999990002')}
-                    className="text-blue-600 font-bold hover:underline cursor-pointer"
-                  >
-                    Use Demo
-                  </button>
-                </div>
-              )}
-
-              <Button type="submit" variant="primary" className="w-full justify-center py-2.5">
-                <span>Continue</span>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={loading}
+                className="w-full justify-center py-2.5"
+              >
+                <span>{loading ? 'Sending OTP...' : 'Continue'}</span>
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </form>
@@ -159,19 +148,6 @@ export const CustomerLoginView: React.FC<CustomerLoginViewProps> = ({ onSuccess 
                   required
                 />
               </div>
-
-              {demoEnabled && (
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>Demo simulation OTP: <strong>1234</strong></span>
-                  <button
-                    type="button"
-                    onClick={() => setOtp('1234')}
-                    className="text-blue-600 font-bold hover:underline cursor-pointer"
-                  >
-                    Auto-fill 1234
-                  </button>
-                </div>
-              )}
 
               <Button
                 type="submit"

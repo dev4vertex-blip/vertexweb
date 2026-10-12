@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { memoryStore, CityRecord } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission } from '../middleware.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requirePermission } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 
 const router = Router();
 
-// Require authentication for all location endpoints
+// Require authentication and BUSINESS platform guard for all location configuration endpoints
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * Helper to compute dependency reference count for a location

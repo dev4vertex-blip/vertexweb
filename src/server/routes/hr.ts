@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { memoryStore } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission } from '../middleware.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requirePermission } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 
 const router = Router();
 
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * GET /api/v1/hr/departments

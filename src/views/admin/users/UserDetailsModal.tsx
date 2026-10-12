@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserListItem, AuthUser } from '../../../types/auth';
+import { useAuth } from '../../../context/AuthContext';
 import { api } from '../../../services/api';
 import { X, ShieldCheck, Mail, Phone, MapPin, Calendar, Clock, Award, Activity, History } from 'lucide-react';
 
@@ -14,6 +15,8 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
   onClose,
   userItem,
 }) => {
+  const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
   const [activeTab, setActiveTab] = useState<'overview' | 'audit'>('overview');
   const [fullUser, setFullUser] = useState<AuthUser | null>(null);
   const [auditHistory, setAuditHistory] = useState<any[]>([]);
@@ -215,22 +218,24 @@ export const UserDetailsModal: React.FC<UserDetailsModalProps> = ({
                 </div>
               )}
 
-              {/* System Permissions */}
-              <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                  Effective Permissions ({fullUser?.permissions?.length || 0})
-                </h4>
-                <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200">
-                  {(fullUser?.permissions || []).map((perm: string) => (
-                    <span
-                      key={perm}
-                      className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-mono text-slate-600"
-                    >
-                      {perm}
-                    </span>
-                  ))}
+              {/* System Permissions (Super Admin only visibility) */}
+              {isSuperAdmin && (
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                    Effective Permissions ({fullUser?.permissions?.length || 0})
+                  </h4>
+                  <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    {(fullUser?.permissions || []).map((perm: string) => (
+                      <span
+                        key={perm}
+                        className="px-2 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-mono text-slate-600"
+                      >
+                        {perm}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             /* Audit Tab */

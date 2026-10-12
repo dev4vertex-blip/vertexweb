@@ -1,13 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
-import { verifyAuthToken, getFullUserById, logAuditEvent } from './auth.js';
+import { verifyAuthToken, getFullUserById, logAuditEvent, PlatformType, TokenPayload } from './auth.js';
 
 export interface AuthenticatedRequest extends Request {
   user?: any;
+  tokenPayload?: TokenPayload;
 }
 
 /**
  * Authentication Middleware: Extracts token from Authorization header or cookie,
- * verifies it against the database, and injects user with permissions into req.user.
+ * verifies it against the database, and injects user with permissions and platform into req.user.
  */
 export async function authenticateUser(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
@@ -15,21 +16,6 @@ export async function authenticateUser(req: AuthenticatedRequest, res: Response,
     let token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
 
     if (!token) {
-      const demoRole = req.headers['x-demo-role'] as string;
-      const demoAllowed =
-        process.env.NODE_ENV !== 'production' ||
-        process.env.DEMO_LOGIN_ENABLED === 'true' ||
-        process.env.VITE_DEMO_LOGIN_ENABLED === 'true';
-
-      if (demoRole && demoAllowed && req.headers['x-prod-mode'] !== 'true' && req.headers['x-test-production'] !== 'true') {
-        const demoUserId = demoRole === 'SALES' ? 'usr-sales-1' : demoRole === 'MANAGER' ? 'usr-mgr-1' : 'usr-admin-1';
-        const user = await getFullUserById(demoUserId);
-        if (user) {
-          req.user = user;
-          return next();
-        }
-      }
-
       return res.status(401).json({
         success: false,
         error: {
@@ -81,7 +67,12 @@ export async function authenticateUser(req: AuthenticatedRequest, res: Response,
       });
     }
 
-    req.user = user;
+    // Attach validated token payload and authoritative user identity
+    req.tokenPayload = payload;
+    req.user = {
+      ...user,
+      platform: payload.platform || user.platform,
+    };
     next();
   } catch (err: any) {
     console.error('Auth middleware failure:', err);
@@ -93,6 +84,61 @@ export async function authenticateUser(req: AuthenticatedRequest, res: Response,
       },
     });
   }
+}
+
+/**
+ * Platform Guard Middleware:
+ * Enforces strict isolation across VERTEX's three separate production platforms:
+ * 1. BUSINESS (Internal staff, admin, sales, finance, hr, managers)
+ * 2. CUSTOMER (End customers self-service)
+ * 3. PARTNER (Field technicians & channel partners)
+ *
+ * This middleware MUST run BEFORE role and permission checks.
+ */
+export function requirePlatform(requiredPlatform: PlatformType | PlatformType[]) {
+  const allowedPlatforms = Array.isArray(requiredPlatform) ? requiredPlatform : [requiredPlatform];
+
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    if (!req.user || !req.tokenPayload) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Authentication required.' },
+      });
+    }
+
+    const tokenPlatform = req.tokenPayload.platform;
+    const userPlatform = req.user.platform;
+
+    // Both token platform claim and user platform profile must match the allowed surface
+    if (!allowedPlatforms.includes(tokenPlatform) || !allowedPlatforms.includes(userPlatform)) {
+      await logAuditEvent({
+        userId: req.user.id,
+        userName: req.user.name,
+        userRole: req.user.role,
+        action: 'CROSS_PLATFORM_ACCESS_DENIED',
+        entity: 'PLATFORM_GUARD',
+        newValue: {
+          tokenPlatform,
+          userPlatform,
+          requiredPlatforms: allowedPlatforms,
+          endpoint: req.originalUrl || req.url,
+          method: req.method,
+        },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PLATFORM_FORBIDDEN',
+          message: `Forbidden: This endpoint belongs to the [${allowedPlatforms.join('/')}] platform. Access from [${tokenPlatform}] credentials is strictly prohibited.`,
+        },
+      });
+    }
+
+    next();
+  };
 }
 
 /**

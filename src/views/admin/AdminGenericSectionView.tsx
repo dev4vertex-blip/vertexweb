@@ -74,7 +74,7 @@ const INITIAL_SALES_MEMBERS: SalesTeamMember[] = [
   {
     id: 'SLS-101',
     name: 'Karan Mehra',
-    email: 'sales@vertex.demo',
+    email: 'karan.mehra@vertexservices.com',
     phone: '+91 99000 00003',
     territory: 'Gurgaon DLF & Golf Course Road',
     amcTarget: '₹5,00,000',

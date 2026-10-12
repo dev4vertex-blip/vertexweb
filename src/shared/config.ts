@@ -17,29 +17,7 @@ export type AppTarget = 'admin' | 'customer' | 'technician' | 'all';
  * In production: strictly disabled when VITE_DEMO_LOGIN_ENABLED='false' or NODE_ENV === 'production'.
  */
 export function isDemoLoginEnabled(): boolean {
-  // 1. Check Node / server environment variables if available
-  if (typeof process !== 'undefined' && process.env) {
-    if (process.env.DEMO_LOGIN_ENABLED === 'false' || process.env.VITE_DEMO_LOGIN_ENABLED === 'false') {
-      return false;
-    }
-    if (process.env.NODE_ENV === 'production' && process.env.DEMO_LOGIN_ENABLED !== 'true') {
-      return false;
-    }
-  }
-
-  // 2. Check client-side Vite environment variable
-  const viteDemoFlag = import.meta.env?.VITE_DEMO_LOGIN_ENABLED;
-  if (viteDemoFlag === 'false') {
-    return false;
-  }
-
-  // 3. Check production environment: strictly disable unless explicitly set to 'true'
-  if (import.meta.env?.PROD || import.meta.env?.MODE === 'production') {
-    return viteDemoFlag === 'true';
-  }
-
-  // Enabled by default in local dev environment for rapid testing
-  return true;
+  return false;
 }
 
 /**

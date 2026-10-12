@@ -10,6 +10,12 @@ let activeDatabaseUrl: string | null = null;
 let isDatabaseOnline: boolean | null = null;
 let lastConnectionCheck: number = 0;
 
+let testDbClientOverride: DbClient | null = null;
+
+export function setTestDbClient(client: DbClient | null) {
+  testDbClientOverride = client;
+}
+
 export interface DbClient {
   query: <T = any>(text: string, params?: any[]) => Promise<{ rows: T[]; rowCount: number | null }>;
   exec: (text: string) => Promise<any>;
@@ -154,6 +160,16 @@ export async function getDb(): Promise<{
   pool: pg.Pool | null;
   isAvailable: boolean;
 }> {
+  if (testDbClientOverride) {
+    return {
+      db: drizzleInstance || {},
+      client: testDbClientOverride,
+      pglite: testDbClientOverride,
+      pool: testDbClientOverride.pool,
+      isAvailable: true,
+    };
+  }
+
   const pool = getPool();
 
   if (pool && isDatabaseOnline !== false) {
@@ -163,15 +179,23 @@ export async function getDb(): Promise<{
           try {
             const res = await pool.query(text, params);
             return { rows: res.rows as T[], rowCount: res.rowCount };
-          } catch {
-            // Seamlessly fall back to memoryStore if live query drops
+          } catch (err) {
+            if (process.env.NODE_ENV === 'production') {
+              console.error('[PostgreSQL Query Error in Production]:', err);
+              throw err;
+            }
+            // Seamlessly fall back to memoryStore only in non-production local development
             return await memoryStore.executeQuery<T>(text, params);
           }
         },
         exec: async (text: string): Promise<any> => {
           try {
             return await pool.query(text);
-          } catch {
+          } catch (err) {
+            if (process.env.NODE_ENV === 'production') {
+              console.error('[PostgreSQL Exec Error in Production]:', err);
+              throw err;
+            }
             return await memoryStore.executeQuery(text);
           }
         },
@@ -189,12 +213,20 @@ export async function getDb(): Promise<{
         pool,
         isAvailable: true,
       };
-    } catch {
-      // Fall through to memory store client
+    } catch (err) {
+      if (process.env.NODE_ENV === 'production') {
+        throw err;
+      }
+      // Fall through to memory store client in development
     }
   }
 
-  // Resilient memory store client
+  // In production: Fail fast! In-memory fallback for business data is strictly forbidden.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[CRITICAL PRODUCTION ERROR] PostgreSQL database is offline. In-memory data store fallback is disabled in production.');
+  }
+
+  // Resilient memory store client for local development only
   const fallbackClient: DbClient = {
     query: async <T = any>(text: string, params?: any[]): Promise<{ rows: T[]; rowCount: number | null }> => {
       return await memoryStore.executeQuery<T>(text, params);

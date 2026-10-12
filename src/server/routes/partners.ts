@@ -1,11 +1,16 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { memoryStore } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission } from '../middleware.js';
+import { partnerRepository, PartnerEntity } from '../repositories/partnerRepository.js';
+import { partnerService } from '../services/partnerService.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requirePermission } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 
 const router = Router();
 
+// Apply authentication and BUSINESS platform guard to partner administrative management routes
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * GET /api/v1/partners
@@ -14,13 +19,9 @@ router.use(authenticateUser);
 router.get('/', requirePermission('PARTNER_VIEW'), async (req: AuthenticatedRequest, res) => {
   try {
     const userRole = req.user?.role;
-    let partners = memoryStore.partners.filter((p) => !p.deleted_at);
+    const userIdFilter = userRole === 'PARTNER' ? req.user?.id : undefined;
 
-    // If partner self-access, restrict to their own record
-    if (userRole === 'PARTNER') {
-      partners = partners.filter((p) => p.user_id === req.user?.id);
-    }
-
+    const partners = await partnerRepository.listPartners(userIdFilter);
     return res.json({ success: true, data: partners });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to fetch partners';
@@ -52,31 +53,50 @@ router.post('/', requirePermission('PARTNER_CREATE'), async (req: AuthenticatedR
       return res.status(400).json({ success: false, error: 'Company name, contact person, email, and phone are required' });
     }
 
-    const partnerId = `ptnr-${Date.now()}`;
-    const newPartner = {
+    const partnerId = `ptnr-${crypto.randomUUID()}`;
+    const publicSuffix = Math.floor(1000 + Math.random() * 9000);
+    const publicId = `VXPTN-${publicSuffix}`;
+
+    const created = await partnerRepository.createPartner({
       id: partnerId,
-      public_id: `VXPTN-${String(memoryStore.partners.length + 1).padStart(4, '0')}`,
-      company_name,
-      contact_person,
-      email,
-      phone,
+      public_id: publicId,
+      company_name: String(company_name).trim(),
+      contact_person: String(contact_person).trim(),
+      email: String(email).trim(),
+      phone: String(phone).trim(),
       pan_number: pan_number || null,
       gst_number: gst_number || null,
       bank_account_number: bank_account_number || null,
       bank_ifsc: bank_ifsc || null,
       bank_name: bank_name || null,
       tier: tier || 'STANDARD',
+      notes: notes || null,
+      status: 'ACTIVE',
+    });
+
+    // In-memory sync for backward compatibility
+    memoryStore.partners.push({
+      id: created.id,
+      public_id: created.public_id,
+      company_name: created.company_name,
+      contact_person: created.contact_person,
+      email: created.email,
+      phone: created.phone,
+      pan_number: created.pan_number,
+      gst_number: created.gst_number,
+      bank_account_number: created.bank_account_number,
+      bank_ifsc: created.bank_ifsc,
+      bank_name: created.bank_name,
+      tier: created.tier as any,
       total_referrals: 0,
       total_commission_earned: 0,
       total_commission_paid: 0,
-      status: 'ACTIVE' as const,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      status: 'ACTIVE',
+      created_at: created.created_at,
+      updated_at: created.updated_at,
       deleted_at: null,
-      notes: notes || null,
-    };
-
-    memoryStore.partners.push(newPartner);
+      notes: created.notes,
+    });
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -85,12 +105,12 @@ router.post('/', requirePermission('PARTNER_CREATE'), async (req: AuthenticatedR
       action: 'PARTNER_CREATE',
       entity: 'PARTNER',
       entityId: partnerId,
-      newValue: newPartner,
+      newValue: created,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return res.status(201).json({ success: true, data: newPartner });
+    return res.status(201).json({ success: true, data: created });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to create partner';
     return res.status(500).json({ success: false, error: msg });
@@ -104,38 +124,34 @@ router.post('/', requirePermission('PARTNER_CREATE'), async (req: AuthenticatedR
 router.put('/:id', requirePermission('PARTNER_EDIT'), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const partner = memoryStore.partners.find((p) => p.id === id && !p.deleted_at);
-    if (!partner) {
+    const existing = await partnerRepository.getPartnerById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Partner not found' });
     }
 
-    const oldPartner = { ...partner };
     const {
       company_name,
       contact_person,
       email,
       phone,
-      pan_number,
-      gst_number,
-      bank_account_number,
-      bank_ifsc,
-      bank_name,
       tier,
       notes,
     } = req.body;
 
-    if (company_name) partner.company_name = company_name;
-    if (contact_person) partner.contact_person = contact_person;
-    if (email) partner.email = email;
-    if (phone) partner.phone = phone;
-    if (pan_number !== undefined) partner.pan_number = pan_number;
-    if (gst_number !== undefined) partner.gst_number = gst_number;
-    if (bank_account_number !== undefined) partner.bank_account_number = bank_account_number;
-    if (bank_ifsc !== undefined) partner.bank_ifsc = bank_ifsc;
-    if (bank_name !== undefined) partner.bank_name = bank_name;
-    if (tier) partner.tier = tier;
-    if (notes !== undefined) partner.notes = notes;
-    partner.updated_at = new Date().toISOString();
+    const updated = await partnerRepository.updatePartner(existing.id, {
+      company_name: company_name ? String(company_name).trim() : undefined,
+      contact_person: contact_person ? String(contact_person).trim() : undefined,
+      email: email ? String(email).trim() : undefined,
+      phone: phone ? String(phone).trim() : undefined,
+      tier: tier || undefined,
+      notes: notes !== undefined ? notes : undefined,
+    });
+
+    // In-memory sync
+    const memPartner = memoryStore.partners.find((p) => p.id === existing.id || p.public_id === existing.public_id);
+    if (memPartner && updated) {
+      Object.assign(memPartner, updated);
+    }
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -144,13 +160,13 @@ router.put('/:id', requirePermission('PARTNER_EDIT'), async (req: AuthenticatedR
       action: 'PARTNER_EDIT',
       entity: 'PARTNER',
       entityId: id,
-      oldValue: oldPartner,
-      newValue: partner,
+      oldValue: existing,
+      newValue: updated,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return res.json({ success: true, data: partner });
+    return res.json({ success: true, data: updated });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to update partner';
     return res.status(500).json({ success: false, error: msg });
@@ -168,22 +184,25 @@ router.patch('/:id/status', async (req: AuthenticatedRequest, res) => {
     const requiredPerm = status === 'ACTIVE' ? 'PARTNER_ACTIVATE' : 'PARTNER_DEACTIVATE';
 
     const userRole = req.user?.role;
-    const hasPerm = memoryStore.rolePermissions.some(
-      (rp) => rp.role_code === userRole && (rp.permission_code === requiredPerm || rp.permission_code === 'PARTNER_EDIT' || userRole === 'SUPER_ADMIN')
-    );
+    const isSuperAdmin = userRole === 'SUPER_ADMIN';
+    const permissions: string[] = req.user?.permissions || [];
+    const hasPerm = isSuperAdmin || permissions.includes(requiredPerm) || permissions.includes('PARTNER_EDIT');
 
     if (!hasPerm) {
       return res.status(403).json({ success: false, error: `Forbidden: requires ${requiredPerm}` });
     }
 
-    const partner = memoryStore.partners.find((p) => p.id === id && !p.deleted_at);
-    if (!partner) {
+    const existing = await partnerRepository.getPartnerById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Partner not found' });
     }
 
-    const oldStatus = partner.status;
-    partner.status = status;
-    partner.updated_at = new Date().toISOString();
+    const updated = await partnerRepository.updatePartner(existing.id, { status });
+
+    const memPartner = memoryStore.partners.find((p) => p.id === existing.id || p.public_id === existing.public_id);
+    if (memPartner && updated) {
+      memPartner.status = status;
+    }
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -192,13 +211,13 @@ router.patch('/:id/status', async (req: AuthenticatedRequest, res) => {
       action: status === 'ACTIVE' ? 'PARTNER_ACTIVATE' : 'PARTNER_DEACTIVATE',
       entity: 'PARTNER',
       entityId: id,
-      oldValue: { status: oldStatus },
-      newValue: { status: partner.status },
+      oldValue: { status: existing.status },
+      newValue: { status },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return res.json({ success: true, data: partner });
+    return res.json({ success: true, data: updated });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to update partner status';
     return res.status(500).json({ success: false, error: msg });
@@ -363,7 +382,7 @@ router.get('/commissions', requirePermission('PARTNER_COMMISSION_VIEW'), async (
     let commissions = [...memoryStore.partnerCommissions];
 
     if (userRole === 'PARTNER') {
-      const myPartner = memoryStore.partners.find((p) => p.user_id === req.user?.id);
+      const myPartner = (await partnerRepository.listPartners(req.user?.id))[0];
       if (myPartner) {
         commissions = commissions.filter((c) => c.partner_id === myPartner.id);
       } else {

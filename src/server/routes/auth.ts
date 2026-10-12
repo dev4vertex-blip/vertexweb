@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../../db/client.js';
-import { memoryStore } from '../../db/memoryStore.js';
-import { generateAuthToken, verifyPassword, getFullUserById, logAuditEvent } from '../auth.js';
+import { generateAuthToken, verifyPassword, getFullUserById, logAuditEvent, resolvePlatformForRole, PlatformType } from '../auth.js';
 import { authenticateUser, AuthenticatedRequest } from '../middleware.js';
 import { authRateLimiter } from '../rateLimiter.js';
 
@@ -11,20 +10,14 @@ const router = Router();
 // In-memory store for active verification codes with 5-minute expiry
 const activeOtpStore = new Map<string, { code: string; expiresAt: number; attempts: number }>();
 
-export function isServerDemoLoginEnabled(req?: Request): boolean {
-  if (req?.headers['x-test-production'] === 'true' || req?.headers['x-prod-mode'] === 'true') {
-    return false;
-  }
-  if (process.env.DEMO_LOGIN_ENABLED === 'false' || process.env.VITE_DEMO_LOGIN_ENABLED === 'false') return false;
-  if (process.env.NODE_ENV === 'production' && process.env.DEMO_LOGIN_ENABLED !== 'true') return false;
-  return true;
+export function isServerDemoLoginEnabled(_req?: Request): boolean {
+  return false;
 }
 
 /**
  * POST /api/v1/auth/send-otp
  * Dispatches verification code to mobile number.
- * In production: generates cryptographically secure code without exposing it in response.
- * In development: includes demo code in response if demo mode is active.
+ * Generates cryptographically secure code without exposing it in the client response.
  */
 router.post('/send-otp', authRateLimiter, async (req: Request, res: Response) => {
   try {
@@ -38,7 +31,6 @@ router.post('/send-otp', authRateLimiter, async (req: Request, res: Response) =>
       return res.status(400).json({ success: false, error: { code: 'INVALID_PHONE', message: 'Please enter a valid 10-digit mobile number.' } });
     }
 
-    const demoEnabled = isServerDemoLoginEnabled(req);
     // Generate secure 4-digit code
     const generatedCode = String(Math.floor(1000 + Math.random() * 9000));
     activeOtpStore.set(cleanPhone, {
@@ -47,10 +39,11 @@ router.post('/send-otp', authRateLimiter, async (req: Request, res: Response) =>
       attempts: 0,
     });
 
+    console.info(`[SMS Dispatch] Verification OTP generated for +91 ${cleanPhone}`);
+
     return res.json({
       success: true,
       message: `Verification code sent to +91 ${cleanPhone}`,
-      ...(demoEnabled ? { demoOtp: generatedCode } : {}),
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to send OTP';
@@ -60,152 +53,127 @@ router.post('/send-otp', authRateLimiter, async (req: Request, res: Response) =>
 
 /**
  * POST /api/v1/auth/demo-login
- * Explicitly rejected in production
+ * Strictly disabled in production
  */
-router.post('/demo-login', authRateLimiter, async (req: Request, res: Response) => {
-  const demoEnabled = isServerDemoLoginEnabled(req);
-  if (!demoEnabled) {
-    return res.status(403).json({
-      success: false,
-      error: { code: 'DEMO_LOGIN_DISABLED', message: 'Demo login API is strictly disabled in production.' },
-    });
-  }
-
-  const { role = 'CUSTOMER', phone = '9999990002' } = req.body;
-  const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-  const match = memoryStore.users.find((u) => (u.phone || '').endsWith(cleanPhone) && !u.deleted_at) || memoryStore.users[0];
-  const fullUser = await getFullUserById(match.id);
-  const token = generateAuthToken(match.id, role || match.role);
-
-  return res.json({ success: true, token, user: fullUser });
+router.post('/demo-login', authRateLimiter, async (_req: Request, res: Response) => {
+  return res.status(403).json({
+    success: false,
+    error: { code: 'DEMO_LOGIN_DISABLED', message: 'Demo login API is strictly disabled in production.' },
+  });
 });
 
 /**
  * POST /api/v1/auth/quick-login
- * Explicitly rejected in production
+ * Strictly disabled in production
  */
-router.post('/quick-login', authRateLimiter, async (req: Request, res: Response) => {
-  const demoEnabled = isServerDemoLoginEnabled(req);
-  if (!demoEnabled) {
-    return res.status(403).json({
-      success: false,
-      error: { code: 'QUICK_LOGIN_DISABLED', message: 'Quick login is strictly disabled in production.' },
-    });
-  }
-  return res.json({ success: true, message: 'Quick login active in development.' });
+router.post('/quick-login', authRateLimiter, async (_req: Request, res: Response) => {
+  return res.status(403).json({
+    success: false,
+    error: { code: 'QUICK_LOGIN_DISABLED', message: 'Quick login is strictly disabled in production.' },
+  });
 });
 
 /**
  * POST /api/v1/auth/simulate-persona
- * Explicitly rejected in production
+ * Strictly disabled in production
  */
-router.post('/simulate-persona', authRateLimiter, async (req: Request, res: Response) => {
-  const demoEnabled = isServerDemoLoginEnabled(req);
-  if (!demoEnabled) {
-    return res.status(403).json({
-      success: false,
-      error: { code: 'PERSONA_SIMULATION_DISABLED', message: 'Persona and role simulation is strictly disabled in production.' },
-    });
-  }
-  return res.json({ success: true, message: 'Persona simulation active in development.' });
+router.post('/simulate-persona', authRateLimiter, async (_req: Request, res: Response) => {
+  return res.status(403).json({
+    success: false,
+    error: { code: 'PERSONA_SIMULATION_DISABLED', message: 'Persona and role simulation is strictly disabled in production.' },
+  });
 });
 
 /**
  * POST /api/v1/auth/login
- * Support both Email/Password and Mobile/OTP with rate limiting and strict demo gating
+ * Real production authentication supporting Mobile/OTP and Corporate Email/Password
  */
-router.post('/login', authRateLimiter, async (req, res) => {
+router.post('/login', authRateLimiter, async (req: Request, res: Response) => {
   try {
-    const { email, password, phone, otp, role } = req.body;
+    const { email, password, phone, otp } = req.body;
     const { pglite } = await getDb();
-    const demoEnabled = isServerDemoLoginEnabled(req);
+
+    // Optional platform hint from client: strictly validated against authoritative user role
+    const requestedPlatform = (req.body.platform as string)?.trim().toUpperCase();
 
     // 1. Mobile & OTP login (Customers & Technicians)
     if (phone && otp) {
-      const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-      if (otp.length < 4) {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
+      if (String(otp).length < 4) {
         return res.status(400).json({
           success: false,
           error: { code: 'INVALID_OTP', message: 'Please enter a valid 4-digit verification code.' },
         });
       }
 
-      // Check simulated OTP rejection in production
-      const isSimulatedOtp = otp === '1234' || otp === '0000' || otp === '4821';
-      if (isSimulatedOtp && !demoEnabled) {
+      // Strictly verify OTP against active verification store
+      const stored = activeOtpStore.get(cleanPhone);
+      if (!stored || Date.now() > stored.expiresAt || stored.code !== String(otp).trim()) {
+        if (stored) stored.attempts += 1;
         return res.status(401).json({
           success: false,
-          error: {
-            code: 'SIMULATED_OTP_REJECTED',
-            message: 'Simulated OTP bypass is disabled in production. Please enter the verification code sent to your phone.',
-          },
+          error: { code: 'INVALID_OTP', message: 'Invalid or expired verification code.' },
         });
       }
 
-      // Verify OTP in production against active store
-      if (!demoEnabled) {
-        const stored = activeOtpStore.get(cleanPhone);
-        if (!stored || Date.now() > stored.expiresAt || stored.code !== otp) {
-          if (stored) stored.attempts += 1;
-          return res.status(401).json({
-            success: false,
-            error: { code: 'INVALID_OTP', message: 'Invalid or expired verification code.' },
-          });
-        }
-        // Single-use: clean up stored OTP upon success
-        activeOtpStore.delete(cleanPhone);
-      }
+      // Single-use: clear OTP after successful verification
+      activeOtpStore.delete(cleanPhone);
 
-      // Look up user by phone
+      // Look up user by registered phone number
       const phoneRes = await pglite.query(
         `SELECT id, role, status FROM users WHERE (phone LIKE $1 OR phone = $2) AND deleted_at IS NULL LIMIT 1`,
         [`%${cleanPhone}`, cleanPhone]
       );
 
-      let targetUser = phoneRes.rows[0];
+      const targetUser = phoneRes.rows[0];
 
-      // If user doesn't exist yet: in demo mode auto-create; in production reject unregistered users
       if (!targetUser) {
-        if (!demoEnabled) {
-          return res.status(401).json({
-            success: false,
-            error: { code: 'USER_NOT_FOUND', message: 'No registered account found with this phone number. Demo user creation is disabled in production.' },
-          });
-        }
-
-        const publicCount = (await pglite.query('SELECT COUNT(*) as c FROM users')).rows[0]?.c || '18';
-        const nextNumber = String(parseInt(publicCount, 10) + 1).padStart(6, '0');
-        const assignedRole = role === 'TECHNICIAN' ? 'TECHNICIAN' : 'CUSTOMER';
-        const newId = crypto.randomUUID();
-
-        await pglite.query(
-          `INSERT INTO users (id, public_id, name, phone, role, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 'ACTIVE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-          [newId, `VXUSR-${nextNumber}`, assignedRole === 'TECHNICIAN' ? 'Field Tech' : 'Mobile Customer', phone, assignedRole]
-        );
-
-        if (assignedRole === 'CUSTOMER') {
-          await pglite.query(
-            `INSERT INTO customer_profiles (id, user_id, customer_type) VALUES ($1, $2, 'INDIVIDUAL')`,
-            [crypto.randomUUID(), newId]
-          );
-        }
-
-        targetUser = { id: newId, role: assignedRole, status: 'ACTIVE' };
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'No registered account found with this phone number. Please register before signing in.',
+          },
+        });
       }
 
       if (targetUser.status === 'INACTIVE' || targetUser.status === 'SUSPENDED' || targetUser.status === 'DELETED') {
         return res.status(403).json({
           success: false,
-          error: { code: 'ACCOUNT_DISABLED', message: 'Your mobile account is deactivated. Please contact support.' },
+          error: { code: 'ACCOUNT_DISABLED', message: 'Your account is deactivated. Please contact VERTEX support.' },
         });
       }
 
-      // Update last login
+      // Authoritatively resolve platform for this account's role
+      const userPlatform = resolvePlatformForRole(targetUser.role);
+
+      // If client explicitly targeted a platform, ensure the user belongs to it
+      if (requestedPlatform && requestedPlatform !== userPlatform) {
+        await logAuditEvent({
+          userId: targetUser.id,
+          userName: 'Mobile User',
+          userRole: targetUser.role,
+          action: 'CROSS_PLATFORM_LOGIN_REJECTED',
+          entity: 'AUTH',
+          newValue: { attemptedPlatform: requestedPlatform, accountPlatform: userPlatform },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+        });
+
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'PLATFORM_MISMATCH',
+            message: `This login portal is for the ${requestedPlatform} platform. Your account belongs to ${userPlatform}. Please sign in at your dedicated portal.`,
+          },
+        });
+      }
+
+      // Update last login timestamp
       await pglite.query(`UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1`, [targetUser.id]);
 
       const fullUser = await getFullUserById(targetUser.id);
-      const token = generateAuthToken(targetUser.id, targetUser.role);
+      const token = generateAuthToken(targetUser.id, targetUser.role, userPlatform);
 
       await logAuditEvent({
         userId: targetUser.id,
@@ -213,7 +181,7 @@ router.post('/login', authRateLimiter, async (req, res) => {
         userRole: targetUser.role,
         action: 'LOGIN',
         entity: 'AUTH',
-        newValue: { method: 'OTP', phone: cleanPhone },
+        newValue: { method: 'OTP', phone: cleanPhone, platform: userPlatform },
         ipAddress: req.ip,
         userAgent: req.headers['user-agent'],
       });
@@ -221,6 +189,7 @@ router.post('/login', authRateLimiter, async (req, res) => {
       return res.json({
         success: true,
         token,
+        platform: userPlatform,
         user: fullUser,
       });
     }
@@ -233,10 +202,10 @@ router.post('/login', authRateLimiter, async (req, res) => {
       });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = String(email).trim().toLowerCase();
 
-    // In production: reject demo persona credentials
-    if (cleanEmail.endsWith('@vertex.demo') && !demoEnabled) {
+    // Reject demo persona domains in production
+    if (cleanEmail.endsWith('@vertex.demo')) {
       return res.status(401).json({
         success: false,
         error: {
@@ -277,6 +246,31 @@ router.post('/login', authRateLimiter, async (req, res) => {
       });
     }
 
+    // Authoritatively resolve platform for this account's role
+    const userPlatform = resolvePlatformForRole(targetUser.role);
+
+    // If client explicitly targeted a platform, ensure the user belongs to it
+    if (requestedPlatform && requestedPlatform !== userPlatform) {
+      await logAuditEvent({
+        userId: targetUser.id,
+        userName: targetUser.name,
+        userRole: targetUser.role,
+        action: 'CROSS_PLATFORM_LOGIN_REJECTED',
+        entity: 'AUTH',
+        newValue: { attemptedPlatform: requestedPlatform, accountPlatform: userPlatform },
+        ipAddress: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'PLATFORM_MISMATCH',
+          message: `This login portal is for the ${requestedPlatform} platform. Your account belongs to ${userPlatform}. Please sign in at your dedicated portal.`,
+        },
+      });
+    }
+
     // Reject accounts without a configured password hash
     if (!targetUser.password_hash) {
       return res.status(401).json({
@@ -285,17 +279,9 @@ router.post('/login', authRateLimiter, async (req, res) => {
       });
     }
 
-    // Verify password; allow test passwords ONLY when demo mode is active
-    const match = await verifyPassword(password, targetUser.password_hash);
-    const isDemoPass =
-      demoEnabled &&
-      (password === 'Admin@123' ||
-        password === 'admin@123' ||
-        password === 'password123' ||
-        password === 'admin123' ||
-        password === 'demo' ||
-        password === 'Admin@1234');
-    if (!match && !isDemoPass) {
+    // Strictly verify bcrypt password against database password_hash
+    const match = await verifyPassword(String(password || ''), targetUser.password_hash);
+    if (!match) {
       return res.status(401).json({
         success: false,
         error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials. Please verify your email and password.' },
@@ -306,7 +292,7 @@ router.post('/login', authRateLimiter, async (req, res) => {
     await pglite.query(`UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1`, [targetUser.id]);
 
     const fullUser = await getFullUserById(targetUser.id);
-    const token = generateAuthToken(targetUser.id, targetUser.role);
+    const token = generateAuthToken(targetUser.id, targetUser.role, userPlatform);
 
     await logAuditEvent({
       userId: targetUser.id,
@@ -314,7 +300,7 @@ router.post('/login', authRateLimiter, async (req, res) => {
       userRole: targetUser.role,
       action: 'LOGIN',
       entity: 'AUTH',
-      newValue: { method: 'CREDENTIALS', email: cleanEmail },
+      newValue: { method: 'CREDENTIALS', email: cleanEmail, platform: userPlatform },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -322,51 +308,10 @@ router.post('/login', authRateLimiter, async (req, res) => {
     return res.json({
       success: true,
       token,
+      platform: userPlatform,
       user: fullUser,
     });
-  } catch (err: any) {
-    const demoEnabled = isServerDemoLoginEnabled(req);
-    // If demo login is disabled, strictly reject all unauthorized attempts
-    if (!demoEnabled) {
-      return res.status(401).json({
-        success: false,
-        error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials. Please verify your details.' },
-      });
-    }
-
-    // Resilient fallback authentication for demo accounts (development only)
-    const cleanEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const phone = req.body?.phone;
-
-    if (cleanEmail) {
-      const match = memoryStore.users.find(
-        (u) => u.email?.toLowerCase().trim() === cleanEmail && !u.deleted_at
-      );
-      if (match) {
-        const fullUser = await getFullUserById(match.id);
-        const token = generateAuthToken(match.id, match.role);
-        return res.json({
-          success: true,
-          token,
-          user: fullUser,
-        });
-      }
-    }
-
-    if (phone) {
-      const cleanPhone = String(phone).replace(/\D/g, '').slice(-10);
-      const match = memoryStore.users.find((u) => (u.phone || '').replace(/\D/g, '').endsWith(cleanPhone) && !u.deleted_at);
-      const assignedRole = req.body?.role === 'TECHNICIAN' ? 'TECHNICIAN' : 'CUSTOMER';
-      const userId = match ? match.id : 'cust-1';
-      const fullUser = await getFullUserById(userId);
-      const token = generateAuthToken(userId, match?.role || assignedRole);
-      return res.json({
-        success: true,
-        token,
-        user: fullUser,
-      });
-    }
-
+  } catch (_err: unknown) {
     return res.status(401).json({
       success: false,
       error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials. Please verify your details.' },
@@ -378,7 +323,7 @@ router.post('/login', authRateLimiter, async (req, res) => {
  * GET /api/v1/auth/me
  * Returns authenticated session profile directly from PostgreSQL
  */
-router.get('/me', authenticateUser, async (req: AuthenticatedRequest, res) => {
+router.get('/me', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
   return res.json({
     success: true,
     user: req.user,
@@ -388,7 +333,7 @@ router.get('/me', authenticateUser, async (req: AuthenticatedRequest, res) => {
 /**
  * POST /api/v1/auth/logout
  */
-router.post('/logout', authenticateUser, async (req: AuthenticatedRequest, res) => {
+router.post('/logout', authenticateUser, async (req: AuthenticatedRequest, res: Response) => {
   if (req.user) {
     await logAuditEvent({
       userId: req.user.id,

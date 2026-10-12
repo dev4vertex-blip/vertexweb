@@ -1,12 +1,13 @@
 import { Router, Response } from 'express';
 import { memoryStore } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission } from '../middleware.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requirePermission } from '../middleware.js';
 import { getManagerScope } from './managers.js';
 
 const router = Router();
 
-// Strictly authenticate all sales endpoints
+// Strictly authenticate all sales endpoints with BUSINESS platform guard
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * Helper: Format currency in Indian Rupees notation

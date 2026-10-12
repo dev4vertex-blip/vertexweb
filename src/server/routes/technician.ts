@@ -1,13 +1,16 @@
 import { Router } from 'express';
 import { getDb } from '../../db/client.js';
-import { authenticateUser, AuthenticatedRequest, requireRole } from '../middleware.js';
+import { bookingRepository } from '../repositories/bookingRepository.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requireRole } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 
 const router = Router();
 
-// Require technician or admin role
+// Platform boundary: strictly isolated to PARTNER platform tokens and TECHNICIAN / PARTNER role.
+// Internal staff cannot access partner self-service routes (staff use Business Hub fleet management).
 router.use(authenticateUser);
-router.use(requireRole(['TECHNICIAN', 'SUPER_ADMIN', 'MANAGER']));
+router.use(requirePlatform('PARTNER'));
+router.use(requireRole(['TECHNICIAN', 'PARTNER']));
 
 /**
  * GET /api/v1/technician/profile
@@ -346,12 +349,9 @@ router.post('/jobs/:id/start', async (req: AuthenticatedRequest, res) => {
     }
 
     const { otp } = req.body;
-    const demoEnabled = process.env.DEMO_LOGIN_ENABLED !== 'false' && process.env.NODE_ENV !== 'production' && req.headers['x-test-production'] !== 'true';
-    const requiredOtp = authCheck.job.otp || (demoEnabled ? '4821' : '');
+    const requiredOtp = authCheck.job.otp;
 
-    // Allow test OTP '4821' ONLY when demo mode is active and not in production
-    const isDemoOtp = demoEnabled && otp === '4821';
-    if (!isDemoOtp && otp !== requiredOtp) {
+    if (!requiredOtp || String(otp).trim() !== String(requiredOtp).trim()) {
       return res.status(400).json({
         success: false,
         error: 'Invalid doorstep verification OTP. Please ask customer for correct 4-digit code.',
@@ -400,29 +400,38 @@ router.post('/jobs/:id/complete', async (req: AuthenticatedRequest, res) => {
     }
 
     const currentStatus = authCheck.job.status;
-    if (currentStatus !== 'In Progress') {
+    const { otp, workPerformed, partsUsed, technicianNotes, customerRemarks } = req.body;
+
+    // Doorstep OTP validation: If job is 'Arrived' and OTP is provided, verify OTP before completing;
+    // If job is already 'In Progress', OTP was verified during doorstep arrival.
+    if (currentStatus === 'Arrived') {
+      const requiredOtp = authCheck.job.otp;
+      if (!requiredOtp || !otp || String(otp).trim() !== String(requiredOtp).trim()) {
+        return res.status(400).json({
+          success: false,
+          error: 'Doorstep verification OTP is required to complete this job. Please enter the 4-digit code provided by the customer.',
+        });
+      }
+    } else if (currentStatus !== 'In Progress') {
       return res.status(400).json({
         success: false,
-        error: `Invalid transition: Job must be 'In Progress' before completion. Current state: '${currentStatus}'.`,
+        error: `Invalid transition: Job must be 'In Progress' or 'Arrived' (with valid OTP) before completion. Current state: '${currentStatus}'.`,
       });
     }
 
-    const { workPerformed, partsUsed, technicianNotes, customerRemarks } = req.body;
+    const earningAmount = Number(authCheck.job.technician_cut) || Math.round((Number(authCheck.job.total_amount) || 0) * 0.7);
 
-    const { pglite } = await getDb();
-    await pglite.query(
-      `UPDATE bookings SET status = $1 WHERE id = $2`,
-      ['Completed', authCheck.job.id]
+    const completedBooking = await bookingRepository.completeBookingWithTransaction(
+      authCheck.job.id,
+      {
+        workPerformed: workPerformed || 'Standard service procedure completed.',
+        partsUsed: partsUsed || 'None',
+        technicianNotes: technicianNotes || 'All diagnostic tests passed.',
+        customerRemarks: customerRemarks || 'Customer signed off satisfaction.',
+      },
+      req.user?.id || authCheck.job.technician_id,
+      earningAmount
     );
-
-    // Save report attributes into in-memory store if present
-    if (authCheck.job) {
-      authCheck.job.work_performed = workPerformed || 'Standard service procedure completed.';
-      authCheck.job.parts_used = partsUsed || 'None';
-      authCheck.job.technician_notes = technicianNotes || 'All diagnostic tests passed.';
-      authCheck.job.customer_remarks = customerRemarks || 'Customer signed off satisfaction.';
-      authCheck.job.status = 'Completed';
-    }
 
     await logAuditEvent({
       userId: req.user?.id,

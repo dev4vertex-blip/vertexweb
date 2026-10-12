@@ -692,13 +692,14 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
             </div>
           )}
 
-          {/* Granular User Permissions Accordion */}
-          <div className="border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setShowPermissionsSection(!showPermissionsSection)}
-              className="w-full px-4.5 py-3.5 bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between text-left transition-colors cursor-pointer"
-            >
+          {/* Granular User Permissions Accordion (Super Admin / Admin Only) */}
+          {(currentUser?.role === 'SUPER_ADMIN' || currentUser?.role === 'ADMIN') && (
+            <div className="border border-slate-300 dark:border-slate-700 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setShowPermissionsSection(!showPermissionsSection)}
+                className="w-full px-4.5 py-3.5 bg-slate-50 dark:bg-slate-800/70 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-between text-left transition-colors cursor-pointer"
+              >
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
                 <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
@@ -782,6 +783,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
               </div>
             )}
           </div>
+        )}
 
           {/* Form Actions */}
           <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-3">

@@ -1,16 +1,17 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { getDb } from '../../db/client.js';
-import { memoryStore } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requireRole } from '../middleware.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requireRole } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 import { bookingRateLimiter } from '../rateLimiter.js';
 
 const router = Router();
 
-// All customer routes require authentication and CUSTOMER (or internal staff) role
+// Platform boundary: strictly isolated to CUSTOMER platform tokens and CUSTOMER role.
+// Internal staff cannot access customer self-service routes (staff use Business Hub customer management).
 router.use(authenticateUser);
-router.use(requireRole(['CUSTOMER', 'SUPER_ADMIN', 'MANAGER', 'SALES']));
+router.use(requirePlatform('CUSTOMER'));
+router.use(requireRole(['CUSTOMER']));
 
 /**
  * GET /api/v1/customer/profile
@@ -384,18 +385,21 @@ router.get('/subscriptions', async (req: AuthenticatedRequest, res) => {
  */
 router.get('/offers', async (_req: AuthenticatedRequest, res) => {
   try {
-    const activePromos = memoryStore.promotions.filter((p) => !p.deleted_at && p.status === 'ACTIVE');
+    const { pglite } = await getDb();
+    const promosRes = await pglite.query(
+      `SELECT * FROM promotions WHERE deleted_at IS NULL AND status = 'ACTIVE'`
+    ).catch(() => ({ rows: [] }));
 
-    const offers = activePromos.map((p) => ({
+    const offers = (promosRes.rows || []).map((p: any) => ({
       id: p.id,
       code: p.code,
       title: p.name,
       description: p.description || (p.discount_type === 'FIXED' ? `Flat ₹${p.discount_value} Off` : `${p.discount_value}% Off`),
       discountType: p.discount_type === 'FIXED' ? 'FLAT' : 'PERCENTAGE',
-      discountValue: p.discount_value,
-      minBookingAmount: p.min_order_value || 0,
+      discountValue: parseFloat(p.discount_value || '0'),
+      minBookingAmount: parseFloat(p.min_order_value || '0'),
       validUntil: p.end_date || '2026-12-31',
-      category: Array.isArray(p.applicable_categories) ? p.applicable_categories[0] : (p.applicable_categories || 'All'),
+      category: p.applicable_categories || 'All',
     }));
 
     return res.json({
@@ -417,27 +421,35 @@ router.post('/offers/validate', async (req: AuthenticatedRequest, res) => {
     const { code, amount } = req.body;
     const cleanCode = String(code || '').toUpperCase().trim();
     const numAmount = Number(amount) || 0;
+    const { pglite } = await getDb();
 
-    // Check memoryStore first
-    const activePromo = memoryStore.promotions.find(
-      (p) => !p.deleted_at && p.status === 'ACTIVE' && p.code.toUpperCase() === cleanCode
-    );
+    // Query active promotions from database
+    const promoRes = await pglite.query(
+      `SELECT * FROM promotions WHERE deleted_at IS NULL AND status = 'ACTIVE' AND UPPER(code) = $1 LIMIT 1`,
+      [cleanCode]
+    ).catch(() => ({ rows: [] }));
+
+    const activePromo: any = promoRes.rows[0];
 
     if (activePromo) {
-      if (numAmount < (activePromo.min_order_value || 0)) {
+      const minOrderVal = parseFloat(activePromo.min_order_value || '0');
+      if (numAmount < minOrderVal) {
         return res.status(400).json({
           success: false,
-          error: `Coupon requires a minimum booking value of ₹${activePromo.min_order_value}`,
+          error: `Coupon requires a minimum booking value of ₹${minOrderVal}`,
         });
       }
 
       let discount = 0;
+      const discountVal = parseFloat(activePromo.discount_value || '0');
+      const maxDiscountVal = activePromo.max_discount ? parseFloat(activePromo.max_discount) : null;
+
       if (activePromo.discount_type === 'FIXED') {
-        discount = activePromo.discount_value;
+        discount = discountVal;
       } else {
-        discount = Math.round((numAmount * activePromo.discount_value) / 100);
-        if (activePromo.max_discount && discount > activePromo.max_discount) {
-          discount = activePromo.max_discount;
+        discount = Math.round((numAmount * discountVal) / 100);
+        if (maxDiscountVal && discount > maxDiscountVal) {
+          discount = maxDiscountVal;
         }
       }
 
@@ -613,15 +625,29 @@ router.get('/payments', async (req: AuthenticatedRequest, res) => {
     const { pglite } = await getDb();
     const userId = req.user?.id;
 
-    const paymentsRes = await pglite.query(
-      `SELECT b.id as booking_id, b.public_id, b.total_amount, b.tax_amount, b.payment_status,
-              b.created_at, s.name as service_name
-       FROM bookings b
+    let paymentsRes = await pglite.query(
+      `SELECT p.id, p.public_id, p.booking_id, p.amount, p.currency, p.payment_method,
+              p.payment_reference, p.status, p.receipt_number, p.collected_at,
+              b.public_id as booking_code, s.name as service_name
+       FROM payments p
+       LEFT JOIN bookings b ON b.id = p.booking_id
        LEFT JOIN services s ON s.id = b.service_id
-       WHERE b.customer_id = $1 AND b.deleted_at IS NULL
-       ORDER BY b.created_at DESC`,
+       WHERE p.customer_id = $1
+       ORDER BY p.collected_at DESC`,
       [userId]
     );
+
+    if (paymentsRes.rows.length === 0) {
+      paymentsRes = await pglite.query(
+        `SELECT b.id as booking_id, b.public_id, b.total_amount, b.tax_amount, b.payment_status,
+                b.created_at, s.name as service_name
+         FROM bookings b
+         LEFT JOIN services s ON s.id = b.service_id
+         WHERE b.customer_id = $1 AND b.payment_status = 'PAID' AND b.deleted_at IS NULL
+         ORDER BY b.created_at DESC`,
+        [userId]
+      );
+    }
 
     return res.json({
       success: true,

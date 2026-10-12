@@ -4,7 +4,6 @@ import { TechnicianJob } from '../../types';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { isDemoLoginEnabled } from '../../shared/config';
 import {
   ArrowLeft,
   Phone,
@@ -75,14 +74,13 @@ export const TechnicianJobDetails: React.FC<TechnicianJobDetailsProps> = ({ job,
   };
 
   const handleVerifyOtp = () => {
-    const isMatch = enteredOtp.trim() === job.otp || (isDemoLoginEnabled() && enteredOtp.trim() === '4821');
+    const isMatch = !!job.otp && enteredOtp.trim() === job.otp.trim();
     if (isMatch) {
       setIsOtpVerified(true);
       updateJobStatus(job.id, 'In Progress');
       addToast('OTP Verified Successfully', 'Job is now officially marked In Progress.', 'success');
     } else {
-      const hint = isDemoLoginEnabled() ? ` (Hint: ${job.otp})` : '';
-      addToast('Invalid OTP', `The code entered does not match customer OTP${hint}.`, 'error');
+      addToast('Invalid OTP', 'The code entered does not match customer OTP. Please check with customer.', 'error');
     }
   };
 
@@ -286,18 +284,13 @@ export const TechnicianJobDetails: React.FC<TechnicianJobDetailsProps> = ({ job,
                   maxLength={4}
                   value={enteredOtp}
                   onChange={(e) => setEnteredOtp(e.target.value)}
-                  placeholder="4-digit OTP (e.g. 4821)"
+                  placeholder="Enter 4-digit customer OTP"
                   className="w-48 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-slate-800"
                 />
                 <Button size="sm" variant="primary" onClick={handleVerifyOtp}>
                   Verify & Start Job
                 </Button>
               </div>
-              {isDemoLoginEnabled() && (
-                <span className="text-[11px] text-amber-600 font-medium block">
-                  Development Test OTP: <strong>{job.otp || '4821'}</strong>
-                </span>
-              )}
             </div>
           ) : (
             <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">

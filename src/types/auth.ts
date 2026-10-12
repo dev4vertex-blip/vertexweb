@@ -302,6 +302,8 @@ export type ActionKey =
   | 'LOCATION_DEACTIVATE'
   | 'LOCATION_MANAGE';
 
+export type PlatformType = 'BUSINESS' | 'CUSTOMER' | 'PARTNER';
+
 export interface AuthUser {
   id: string;
   publicId?: string;
@@ -310,6 +312,7 @@ export interface AuthUser {
   phone?: string;
   role: UserRole;
   roleName?: string;
+  platform?: PlatformType;
   status: string; // 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'active'
   city?: string;
   cityId?: number;
@@ -416,12 +419,14 @@ export interface LoginCredentials {
   email: string;
   password?: string;
   role?: UserRole;
+  platform?: PlatformType;
 }
 
 export interface OtpCredentials {
   phone: string;
   otp: string;
-  role: 'CUSTOMER' | 'TECHNICIAN';
+  role?: 'CUSTOMER' | 'TECHNICIAN' | UserRole;
+  platform?: PlatformType;
 }
 
 export interface AuthSession {

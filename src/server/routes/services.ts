@@ -1,34 +1,37 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { memoryStore } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission, requireAnyPermission } from '../middleware.js';
+import { catalogRepository, ServiceCategoryEntity, ServiceEntity } from '../repositories/catalogRepository.js';
+import { catalogService } from '../services/catalogService.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requirePermission, requireAnyPermission } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 
 const router = Router();
 
-// Require authentication for all service management endpoints
+// Require authentication and BUSINESS platform guard for all service management endpoints
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * Helper to compute category dependencies across active services and commission rules
  */
-export function getCategoryDependencies(categoryId: number): {
+export async function getCategoryDependencies(categoryId: number): Promise<{
   total: number;
   services: number;
   active_services: number;
   commission_rules: number;
   service_names: string[];
-} {
-  const linkedServices = memoryStore.services.filter((s) => s.category_id === categoryId && !s.deleted_at);
-  const activeServices = linkedServices.filter((s) => s.is_active || s.status === 'ACTIVE');
+}> {
+  const allServices = await catalogRepository.listServices({ categoryId });
+  const activeServices = allServices.filter((s) => s.is_active || s.status === 'ACTIVE');
   const linkedRules = (memoryStore.commissionRules || []).filter((r) => r.category_id === categoryId && !r.deleted_at);
 
   return {
-    total: linkedServices.length + linkedRules.length,
-    services: linkedServices.length,
+    total: allServices.length + linkedRules.length,
+    services: allServices.length,
     active_services: activeServices.length,
     commission_rules: linkedRules.length,
-    service_names: linkedServices.map((s) => s.name),
+    service_names: allServices.map((s) => s.name),
   };
 }
 
@@ -56,63 +59,69 @@ router.get(
     'BOOKING_CREATE',
   ]),
   async (req: AuthenticatedRequest, res) => {
-  try {
-    const search = req.query.search ? String(req.query.search).trim().toLowerCase() : '';
-    const status = req.query.status ? String(req.query.status).trim().toUpperCase() : 'ALL';
+    try {
+      const search = req.query.search ? String(req.query.search).trim().toLowerCase() : '';
+      const status = req.query.status ? String(req.query.status).trim().toUpperCase() : 'ALL';
 
-    let categories = memoryStore.serviceCategories.filter((c) => !c.deleted_at);
+      // Authoritative PostgreSQL query
+      let categories = await catalogRepository.listCategories();
 
-    if (search) {
-      categories = categories.filter(
-        (c) =>
-          c.name.toLowerCase().includes(search) ||
-          (c.code && c.code.toLowerCase().includes(search)) ||
-          (c.description && c.description.toLowerCase().includes(search)) ||
-          (c.slug && c.slug.toLowerCase().includes(search))
+      if (search) {
+        categories = categories.filter(
+          (c) =>
+            c.name.toLowerCase().includes(search) ||
+            (c.code && c.code.toLowerCase().includes(search)) ||
+            (c.description && c.description.toLowerCase().includes(search)) ||
+            (c.slug && c.slug.toLowerCase().includes(search))
+        );
+      }
+
+      if (status === 'ACTIVE') {
+        categories = categories.filter((c) => c.active !== false);
+      } else if (status === 'INACTIVE') {
+        categories = categories.filter((c) => c.active === false);
+      }
+
+      // Enrich with dynamic service & dependency counts
+      const enriched = await Promise.all(
+        categories.map(async (c) => {
+          const deps = await getCategoryDependencies(c.id);
+          return {
+            ...c,
+            active: c.active !== false,
+            status: c.active !== false ? 'ACTIVE' : 'INACTIVE',
+            services: deps.services,
+            active_services: deps.active_services,
+            dependencies: deps,
+          };
+        })
       );
-    }
 
-    if (status === 'ACTIVE') {
-      categories = categories.filter((c) => c.active !== false);
-    } else if (status === 'INACTIVE') {
-      categories = categories.filter((c) => c.active === false);
-    }
+      // Sort by sort_order then name
+      enriched.sort((a, b) => (a.sort_order || 999) - (b.sort_order || 999) || a.name.localeCompare(b.name));
 
-    // Enrich with dynamic service & dependency counts
-    const enriched = categories.map((c) => {
-      const deps = getCategoryDependencies(c.id);
-      return {
-        ...c,
-        active: c.active !== false,
-        status: c.active !== false ? 'ACTIVE' : 'INACTIVE',
-        services: deps.services,
-        active_services: deps.active_services,
-        dependencies: deps,
+      const allDbCategories = await catalogRepository.listCategories();
+      const allDbServices = await catalogRepository.listServices();
+
+      const summary = {
+        total: allDbCategories.length,
+        active: allDbCategories.filter((c) => c.active !== false).length,
+        inactive: allDbCategories.filter((c) => c.active === false).length,
+        total_services_covered: allDbServices.filter((s) => s.category_id).length,
       };
-    });
 
-    // Sort by sort_order then name
-    enriched.sort((a, b) => (a.sort_order || 999) - (b.sort_order || 999) || a.name.localeCompare(b.name));
-
-    const allNonDeleted = memoryStore.serviceCategories.filter((c) => !c.deleted_at);
-    const summary = {
-      total: allNonDeleted.length,
-      active: allNonDeleted.filter((c) => c.active !== false).length,
-      inactive: allNonDeleted.filter((c) => c.active === false).length,
-      total_services_covered: memoryStore.services.filter((s) => !s.deleted_at && s.category_id).length,
-    };
-
-    return res.json({
-      success: true,
-      data: enriched,
-      total: enriched.length,
-      summary,
-    });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Failed to fetch categories';
-    return res.status(500).json({ success: false, error: msg });
+      return res.json({
+        success: true,
+        data: enriched,
+        total: enriched.length,
+        summary,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch categories';
+      return res.status(500).json({ success: false, error: msg });
+    }
   }
-});
+);
 
 /**
  * POST /api/v1/services/categories
@@ -131,10 +140,9 @@ router.post('/categories', requirePermission('SERVICE_CATEGORY_MANAGE'), async (
       return res.status(400).json({ success: false, error: 'Category code is required' });
     }
 
-    // Duplicate checks
-    const existingName = memoryStore.serviceCategories.find(
-      (c) => !c.deleted_at && c.name.trim().toLowerCase() === cleanName.toLowerCase()
-    );
+    // Duplicate checks in PostgreSQL
+    const existingCategories = await catalogRepository.listCategories();
+    const existingName = existingCategories.find((c) => c.name.trim().toLowerCase() === cleanName.toLowerCase());
     if (existingName) {
       return res.status(409).json({
         success: false,
@@ -142,9 +150,7 @@ router.post('/categories', requirePermission('SERVICE_CATEGORY_MANAGE'), async (
       });
     }
 
-    const existingCode = memoryStore.serviceCategories.find(
-      (c) => !c.deleted_at && c.code && c.code.trim().toUpperCase() === cleanCode
-    );
+    const existingCode = existingCategories.find((c) => c.code && c.code.trim().toUpperCase() === cleanCode);
     if (existingCode) {
       return res.status(409).json({
         success: false,
@@ -152,24 +158,29 @@ router.post('/categories', requirePermission('SERVICE_CATEGORY_MANAGE'), async (
       });
     }
 
-    // Auto-generate safe incremental ID
-    const maxId = memoryStore.serviceCategories.reduce((max, c) => (c.id > max ? c.id : max), 0);
-    const newId = maxId + 1;
-
-    const newCategory = {
-      id: newId,
+    const created = await catalogRepository.createCategory({
       name: cleanName,
-      slug: cleanCode.toLowerCase().replace(/_/g, '-'),
       code: cleanCode,
+      slug: cleanCode.toLowerCase().replace(/_/g, '-'),
       icon: icon && String(icon).trim() ? String(icon).trim() : '🛠️',
       description: description ? String(description).trim() : null,
-      sort_order: sort_order !== undefined && sort_order !== null ? Number(sort_order) : newId,
+      sort_order: sort_order !== undefined && sort_order !== null ? Number(sort_order) : 1,
       active: active !== undefined ? Boolean(active) : true,
-      created_at: new Date().toISOString(),
-      deleted_at: null,
-    };
+    });
 
-    memoryStore.serviceCategories.push(newCategory);
+    // In-memory sync for backward compatibility
+    memoryStore.serviceCategories.push({
+      id: created.id,
+      name: created.name,
+      slug: created.slug || '',
+      code: created.code || '',
+      icon: created.icon || '🛠️',
+      description: created.description,
+      sort_order: created.sort_order,
+      active: created.active,
+      created_at: created.created_at,
+      deleted_at: null,
+    });
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -177,18 +188,18 @@ router.post('/categories', requirePermission('SERVICE_CATEGORY_MANAGE'), async (
       userRole: req.user?.role,
       action: 'SERVICE_CATEGORY_CREATE',
       entity: 'SERVICE_CATEGORY',
-      entityId: String(newCategory.id),
-      newValue: newCategory,
+      entityId: String(created.id),
+      newValue: created,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    const deps = getCategoryDependencies(newCategory.id);
+    const deps = await getCategoryDependencies(created.id);
 
     return res.status(201).json({
       success: true,
       data: {
-        ...newCategory,
+        ...created,
         services: deps.services,
         active_services: deps.active_services,
         dependencies: deps,
@@ -208,29 +219,20 @@ router.post('/categories', requirePermission('SERVICE_CATEGORY_MANAGE'), async (
 router.put('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), async (req: AuthenticatedRequest, res) => {
   try {
     const id = Number(req.params.id);
-    const category = memoryStore.serviceCategories.find((c) => c.id === id && !c.deleted_at);
-    if (!category) {
+    const existing = await catalogRepository.getCategoryById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Category not found' });
     }
 
-    const oldCategory = { ...category };
     const { name, code, icon, description, sort_order, active } = req.body;
+    const updateData: Partial<ServiceCategoryEntity> = {};
 
     if (name !== undefined) {
       const cleanName = String(name).trim();
       if (!cleanName) {
         return res.status(400).json({ success: false, error: 'Category name cannot be empty' });
       }
-      const nameDuplicate = memoryStore.serviceCategories.find(
-        (c) => c.id !== id && !c.deleted_at && c.name.trim().toLowerCase() === cleanName.toLowerCase()
-      );
-      if (nameDuplicate) {
-        return res.status(409).json({
-          success: false,
-          error: `A category named "${cleanName}" already exists.`,
-        });
-      }
-      category.name = cleanName;
+      updateData.name = cleanName;
     }
 
     if (code !== undefined) {
@@ -238,23 +240,22 @@ router.put('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), asyn
       if (!cleanCode) {
         return res.status(400).json({ success: false, error: 'Category code cannot be empty' });
       }
-      const codeDuplicate = memoryStore.serviceCategories.find(
-        (c) => c.id !== id && !c.deleted_at && c.code && c.code.trim().toUpperCase() === cleanCode
-      );
-      if (codeDuplicate) {
-        return res.status(409).json({
-          success: false,
-          error: `A category with code "${cleanCode}" already exists.`,
-        });
-      }
-      category.code = cleanCode;
-      category.slug = cleanCode.toLowerCase().replace(/_/g, '-');
+      updateData.code = cleanCode;
+      updateData.slug = cleanCode.toLowerCase().replace(/_/g, '-');
     }
 
-    if (icon !== undefined) category.icon = String(icon).trim() || '🛠️';
-    if (description !== undefined) category.description = description ? String(description).trim() : null;
-    if (sort_order !== undefined) category.sort_order = Number(sort_order);
-    if (active !== undefined) category.active = Boolean(active);
+    if (icon !== undefined) updateData.icon = String(icon).trim() || '🛠️';
+    if (description !== undefined) updateData.description = description ? String(description).trim() : null;
+    if (sort_order !== undefined) updateData.sort_order = Number(sort_order);
+    if (active !== undefined) updateData.active = Boolean(active);
+
+    const updated = await catalogRepository.updateCategory(id, updateData);
+
+    // Sync in-memory store
+    const memCat = memoryStore.serviceCategories.find((c) => c.id === id);
+    if (memCat && updated) {
+      Object.assign(memCat, updated);
+    }
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -263,23 +264,23 @@ router.put('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), asyn
       action: 'SERVICE_CATEGORY_UPDATE',
       entity: 'SERVICE_CATEGORY',
       entityId: String(id),
-      oldValue: oldCategory,
-      newValue: category,
+      oldValue: existing,
+      newValue: updated,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    const deps = getCategoryDependencies(id);
+    const deps = await getCategoryDependencies(id);
 
     return res.json({
       success: true,
       data: {
-        ...category,
+        ...updated,
         services: deps.services,
         active_services: deps.active_services,
         dependencies: deps,
       },
-      message: `Category "${category.name}" updated successfully.`,
+      message: `Category "${updated?.name}" updated successfully.`,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to update category';
@@ -294,14 +295,18 @@ router.put('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), asyn
 router.post('/categories/:id/activate', requirePermission('SERVICE_CATEGORY_MANAGE'), async (req: AuthenticatedRequest, res) => {
   try {
     const id = Number(req.params.id);
-    const category = memoryStore.serviceCategories.find((c) => c.id === id);
-    if (!category) {
+    const existing = await catalogRepository.getCategoryById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Category not found' });
     }
 
-    const previousActive = category.active;
-    category.active = true;
-    category.deleted_at = null;
+    const updated = await catalogRepository.updateCategory(id, { active: true });
+
+    const memCat = memoryStore.serviceCategories.find((c) => c.id === id);
+    if (memCat) {
+      memCat.active = true;
+      memCat.deleted_at = null;
+    }
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -310,23 +315,23 @@ router.post('/categories/:id/activate', requirePermission('SERVICE_CATEGORY_MANA
       action: 'SERVICE_CATEGORY_ACTIVATE',
       entity: 'SERVICE_CATEGORY',
       entityId: String(id),
-      oldValue: { active: previousActive },
+      oldValue: { active: existing.active },
       newValue: { active: true },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    const deps = getCategoryDependencies(id);
+    const deps = await getCategoryDependencies(id);
 
     return res.json({
       success: true,
       data: {
-        ...category,
+        ...updated,
         services: deps.services,
         active_services: deps.active_services,
         dependencies: deps,
       },
-      message: `Category "${category.name}" is now active.`,
+      message: `Category "${updated?.name}" is now active.`,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to activate category';
@@ -341,13 +346,17 @@ router.post('/categories/:id/activate', requirePermission('SERVICE_CATEGORY_MANA
 router.post('/categories/:id/deactivate', requirePermission('SERVICE_CATEGORY_MANAGE'), async (req: AuthenticatedRequest, res) => {
   try {
     const id = Number(req.params.id);
-    const category = memoryStore.serviceCategories.find((c) => c.id === id && !c.deleted_at);
-    if (!category) {
+    const existing = await catalogRepository.getCategoryById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Category not found' });
     }
 
-    const previousActive = category.active;
-    category.active = false;
+    const updated = await catalogRepository.updateCategory(id, { active: false });
+
+    const memCat = memoryStore.serviceCategories.find((c) => c.id === id);
+    if (memCat) {
+      memCat.active = false;
+    }
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -356,23 +365,23 @@ router.post('/categories/:id/deactivate', requirePermission('SERVICE_CATEGORY_MA
       action: 'SERVICE_CATEGORY_DEACTIVATE',
       entity: 'SERVICE_CATEGORY',
       entityId: String(id),
-      oldValue: { active: previousActive },
+      oldValue: { active: existing.active },
       newValue: { active: false },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    const deps = getCategoryDependencies(id);
+    const deps = await getCategoryDependencies(id);
 
     return res.json({
       success: true,
       data: {
-        ...category,
+        ...updated,
         services: deps.services,
         active_services: deps.active_services,
         dependencies: deps,
       },
-      message: `Category "${category.name}" has been deactivated.`,
+      message: `Category "${updated?.name}" has been deactivated.`,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to deactivate category';
@@ -383,19 +392,16 @@ router.post('/categories/:id/deactivate', requirePermission('SERVICE_CATEGORY_MA
 /**
  * DELETE /api/v1/services/categories/:id
  * Delete or safely archive a service category
- * Dependency protection: if linked services or commission rules exist,
- * block hard deletion or safely archive/deactivate unless force/safe archival requested.
  */
 router.delete('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), async (req: AuthenticatedRequest, res) => {
   try {
     const id = Number(req.params.id);
-    const categoryIndex = memoryStore.serviceCategories.findIndex((c) => c.id === id && !c.deleted_at);
-    if (categoryIndex === -1) {
+    const category = await catalogRepository.getCategoryById(id);
+    if (!category) {
       return res.status(404).json({ success: false, error: 'Category not found' });
     }
 
-    const category = memoryStore.serviceCategories[categoryIndex];
-    const deps = getCategoryDependencies(id);
+    const deps = await getCategoryDependencies(id);
     const forceArchive = req.query.force_archive === 'true' || req.body?.force_archive === true;
 
     // Strict dependency check
@@ -407,52 +413,32 @@ router.delete('/categories/:id', requirePermission('SERVICE_CATEGORY_MANAGE'), a
       });
     }
 
-    if (deps.total > 0 && forceArchive) {
-      // Safely archive
-      category.deleted_at = new Date().toISOString();
-      category.active = false;
+    await catalogRepository.softDeleteCategory(id);
 
-      await logAuditEvent({
-        userId: req.user?.id,
-        userName: req.user?.name,
-        userRole: req.user?.role,
-        action: 'SERVICE_CATEGORY_ARCHIVE',
-        entity: 'SERVICE_CATEGORY',
-        entityId: String(id),
-        oldValue: { active: true, deleted_at: null },
-        newValue: { active: false, deleted_at: category.deleted_at, reason: 'ARCHIVED_WITH_DEPENDENCIES' },
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
-      });
-
-      return res.json({
-        success: true,
-        action: 'ARCHIVED',
-        message: `Category "${category.name}" archived safely due to linked services.`,
-        data: { id: category.id, name: category.name },
-      });
+    // Sync in-memory store
+    const memIdx = memoryStore.serviceCategories.findIndex((c) => c.id === id);
+    if (memIdx !== -1) {
+      memoryStore.serviceCategories[memIdx].deleted_at = new Date().toISOString();
+      memoryStore.serviceCategories[memIdx].active = false;
     }
-
-    // Zero active dependencies: allow clean deletion
-    memoryStore.serviceCategories.splice(categoryIndex, 1);
 
     await logAuditEvent({
       userId: req.user?.id,
       userName: req.user?.name,
       userRole: req.user?.role,
-      action: 'SERVICE_CATEGORY_DELETE',
+      action: 'SERVICE_CATEGORY_ARCHIVE',
       entity: 'SERVICE_CATEGORY',
       entityId: String(id),
-      oldValue: { id: category.id, name: category.name, code: category.code },
-      newValue: null,
+      oldValue: { active: true, deleted_at: null },
+      newValue: { active: false, reason: 'ARCHIVED' },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
     return res.json({
       success: true,
-      action: 'DELETED',
-      message: `Category "${category.name}" deleted successfully.`,
+      action: 'ARCHIVED',
+      message: `Category "${category.name}" archived safely.`,
       data: { id: category.id, name: category.name },
     });
   } catch (err: unknown) {
@@ -479,28 +465,18 @@ router.get(
     'LEAD_CREATE',
   ]),
   async (req: AuthenticatedRequest, res) => {
-  try {
-    const activeOnly = req.query.active === 'true';
-    let services = memoryStore.services.filter((s) => !s.deleted_at);
-    if (activeOnly) {
-      services = services.filter((s) => s.is_active || s.status === 'ACTIVE');
+    try {
+      const activeOnly = req.query.active === 'true';
+      const categoryId = req.query.category_id ? Number(req.query.category_id) : undefined;
+      const services = await catalogRepository.listServices({ activeOnly, categoryId });
+
+      return res.json({ success: true, data: services });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch services';
+      return res.status(500).json({ success: false, error: msg });
     }
-
-    const enriched = services.map((s) => {
-      const cat = memoryStore.serviceCategories.find((c) => c.id === s.category_id);
-      return {
-        ...s,
-        category_name: cat?.name || 'Home Appliance',
-        category_code: cat?.code || cat?.slug?.toUpperCase() || 'GENERAL',
-      };
-    });
-
-    return res.json({ success: true, data: enriched });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Failed to fetch services';
-    return res.status(500).json({ success: false, error: msg });
   }
-});
+);
 
 /**
  * POST /api/v1/services
@@ -528,37 +504,64 @@ router.post('/', requirePermission('SERVICE_CREATE'), async (req: AuthenticatedR
       return res.status(400).json({ success: false, error: 'Name, category_id, and base_price are required' });
     }
 
-    const serviceId = `srv-${Date.now()}`;
-    const newService = {
+    const serviceId = `srv-${crypto.randomUUID()}`;
+    const publicSuffix = Math.floor(1000 + Math.random() * 9000);
+    const publicId = `VXSVC-${publicSuffix}`;
+
+    const created = await catalogRepository.createService({
       id: serviceId,
-      public_id: `VXSVC-${String(memoryStore.services.length + 1).padStart(4, '0')}`,
+      public_id: publicId,
       category_id: Number(category_id),
-      name,
-      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      name: String(name).trim(),
+      slug: String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
       price: Number(base_price),
       base_price: Number(base_price),
-      discounted_price: strike_price ? Number(strike_price) : undefined,
+      discounted_price: strike_price ? Number(strike_price) : null,
       strike_price: strike_price ? Number(strike_price) : null,
       duration_minutes: duration_minutes ? Number(duration_minutes) : 60,
       short_description: short_description || null,
       description: description || name,
+      requirements: JSON.stringify(['Standard electric power supply', 'Clear workspace around appliance']),
+      availability: JSON.stringify(['Morning', 'Afternoon', 'Evening']),
+      features: typeof features === 'string' ? features : JSON.stringify(features || []),
+      warranty_days: warranty_days ? Number(warranty_days) : 30,
+      sla_hours: sla_hours ? Number(sla_hours) : 4,
+      tax_percent: tax_rate ? Number(tax_rate) : 18.0,
+      sort_order: sort_order ? Number(sort_order) : 1,
+      image_url: image_url || null,
+      status: 'ACTIVE',
+      is_active: true,
+    });
+
+    // In-memory sync for backward compatibility
+    memoryStore.services.push({
+      id: created.id,
+      public_id: created.public_id,
+      category_id: created.category_id,
+      name: created.name,
+      slug: created.slug || '',
+      price: Number(created.price),
+      base_price: Number(created.base_price),
+      discounted_price: created.discounted_price ? Number(created.discounted_price) : undefined,
+      strike_price: created.strike_price ? Number(created.strike_price) : null,
+      duration_minutes: created.duration_minutes,
+      short_description: created.short_description,
+      description: created.description || created.name,
       requirements: ['Standard electric power supply', 'Clear workspace around appliance'],
       availability: ['Morning', 'Afternoon', 'Evening'],
       features: Array.isArray(features) ? features : [],
-      warranty_days: warranty_days ? Number(warranty_days) : 30,
-      sla_hours: sla_hours ? Number(sla_hours) : 4,
-      tax_rate: tax_rate ? Number(tax_rate) : 18.0,
-      tax_percent: tax_rate ? Number(tax_rate) : 18.0,
-      sort_order: sort_order ? Number(sort_order) : memoryStore.services.length + 1,
-      image_url: image_url || null,
-      status: 'ACTIVE' as const,
+      warranty_days: created.warranty_days,
+      sla_hours: created.sla_hours,
+      tax_rate: Number(created.tax_percent),
+      tax_percent: Number(created.tax_percent),
+      sort_order: created.sort_order,
+      image_url: created.image_url,
+      status: 'ACTIVE',
       is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      created_at: created.created_at,
+      updated_at: created.updated_at,
       deleted_at: null,
-    };
-
-    memoryStore.services.push(newService);
+    });
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -567,12 +570,12 @@ router.post('/', requirePermission('SERVICE_CREATE'), async (req: AuthenticatedR
       action: 'SERVICE_CREATE',
       entity: 'SERVICE',
       entityId: serviceId,
-      newValue: newService,
+      newValue: created,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return res.status(201).json({ success: true, data: newService });
+    return res.status(201).json({ success: true, data: created });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to create service';
     return res.status(500).json({ success: false, error: msg });
@@ -586,51 +589,37 @@ router.post('/', requirePermission('SERVICE_CREATE'), async (req: AuthenticatedR
 router.put('/:id', requirePermission('SERVICE_EDIT'), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const service = memoryStore.services.find((s) => s.id === id && !s.deleted_at);
-    if (!service) {
+    const existing = await catalogRepository.getServiceById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Service not found' });
     }
 
-    const oldService = { ...service };
     const {
       name,
-      category_id,
       base_price,
       strike_price,
       duration_minutes,
-      short_description,
       description,
-      features,
-      warranty_days,
-      sla_hours,
-      tax_rate,
-      sort_order,
-      image_url,
+      status,
+      is_active,
     } = req.body;
 
-    if (name) service.name = name;
-    if (category_id !== undefined) service.category_id = Number(category_id);
-    if (base_price !== undefined) {
-      service.base_price = Number(base_price);
-      service.price = Number(base_price);
+    const updated = await catalogRepository.updateService(existing.id, {
+      name: name !== undefined ? String(name).trim() : undefined,
+      price: base_price !== undefined ? Number(base_price) : undefined,
+      base_price: base_price !== undefined ? Number(base_price) : undefined,
+      discounted_price: strike_price !== undefined ? Number(strike_price) : undefined,
+      duration_minutes: duration_minutes !== undefined ? Number(duration_minutes) : undefined,
+      description: description !== undefined ? description : undefined,
+      status: status !== undefined ? status : undefined,
+      is_active: is_active !== undefined ? Boolean(is_active) : undefined,
+    });
+
+    // In-memory sync
+    const memService = memoryStore.services.find((s) => s.id === existing.id || s.public_id === existing.public_id);
+    if (memService && updated) {
+      Object.assign(memService, updated);
     }
-    if (strike_price !== undefined) {
-      service.strike_price = Number(strike_price);
-      service.discounted_price = Number(strike_price);
-    }
-    if (duration_minutes !== undefined) service.duration_minutes = Number(duration_minutes);
-    if (short_description !== undefined) service.short_description = short_description;
-    if (description !== undefined) service.description = description;
-    if (features !== undefined) service.features = Array.isArray(features) ? features : [];
-    if (warranty_days !== undefined) service.warranty_days = Number(warranty_days);
-    if (sla_hours !== undefined) service.sla_hours = Number(sla_hours);
-    if (tax_rate !== undefined) {
-      service.tax_rate = Number(tax_rate);
-      service.tax_percent = Number(tax_rate);
-    }
-    if (sort_order !== undefined) service.sort_order = Number(sort_order);
-    if (image_url !== undefined) service.image_url = image_url;
-    service.updated_at = new Date().toISOString();
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -639,13 +628,13 @@ router.put('/:id', requirePermission('SERVICE_EDIT'), async (req: AuthenticatedR
       action: 'SERVICE_EDIT',
       entity: 'SERVICE',
       entityId: id,
-      oldValue: oldService,
-      newValue: service,
+      oldValue: existing,
+      newValue: updated,
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return res.json({ success: true, data: service });
+    return res.json({ success: true, data: updated });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to edit service';
     return res.status(500).json({ success: false, error: msg });
@@ -661,32 +650,24 @@ router.patch(['/:id/pricing', '/:id/price'], requirePermission('SERVICE_PRICE_ED
     const { id } = req.params;
     const base_price = req.body.base_price !== undefined ? req.body.base_price : req.body.basePrice;
     const strike_price = req.body.strike_price !== undefined ? req.body.strike_price : req.body.strikePrice;
-    const tax_rate = req.body.tax_rate !== undefined ? req.body.tax_rate : req.body.taxRate;
 
-    const service = memoryStore.services.find((s) => s.id === id && !s.deleted_at);
-    if (!service) {
+    const existing = await catalogRepository.getServiceById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Service not found' });
     }
 
-    const oldPricing = {
-      base_price: service.base_price,
-      strike_price: service.strike_price,
-      tax_rate: service.tax_rate,
-    };
+    const updated = await catalogRepository.updateService(existing.id, {
+      price: base_price !== undefined ? Number(base_price) : undefined,
+      base_price: base_price !== undefined ? Number(base_price) : undefined,
+      discounted_price: strike_price !== undefined ? Number(strike_price) : undefined,
+    });
 
-    if (base_price !== undefined) {
-      service.base_price = Number(base_price);
-      service.price = Number(base_price);
+    // In-memory sync
+    const memService = memoryStore.services.find((s) => s.id === existing.id || s.public_id === existing.public_id);
+    if (memService && updated) {
+      memService.base_price = Number(updated.base_price);
+      memService.price = Number(updated.price);
     }
-    if (strike_price !== undefined) {
-      service.strike_price = Number(strike_price);
-      service.discounted_price = Number(strike_price);
-    }
-    if (tax_rate !== undefined) {
-      service.tax_rate = Number(tax_rate);
-      service.tax_percent = Number(tax_rate);
-    }
-    service.updated_at = new Date().toISOString();
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -695,13 +676,13 @@ router.patch(['/:id/pricing', '/:id/price'], requirePermission('SERVICE_PRICE_ED
       action: 'SERVICE_PRICE_EDIT',
       entity: 'SERVICE',
       entityId: id,
-      oldValue: oldPricing,
-      newValue: { base_price: service.base_price, strike_price: service.strike_price, tax_rate: service.tax_rate },
+      oldValue: { base_price: existing.base_price },
+      newValue: { base_price: updated?.base_price },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return res.json({ success: true, data: service });
+    return res.json({ success: true, data: updated });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to update service pricing';
     return res.status(500).json({ success: false, error: msg });
@@ -718,35 +699,34 @@ router.patch('/:id/status', async (req: AuthenticatedRequest, res) => {
     const targetActive = req.body.is_active !== undefined ? Boolean(req.body.is_active) : Boolean(req.body.active);
     const requiredPerm = targetActive ? 'SERVICE_ACTIVATE' : 'SERVICE_DEACTIVATE';
 
-    // Super Admin has unconditional bypass across all service operations
     const isSuperAdmin = req.user?.role === 'SUPER_ADMIN';
     const userPermissions: string[] = req.user?.permissions || [];
-    const userRole = req.user?.role;
 
     const hasPerm =
       isSuperAdmin ||
       userPermissions.includes(requiredPerm) ||
       userPermissions.includes('SERVICE_EDIT') ||
-      userPermissions.includes('SERVICE_MANAGE') ||
-      memoryStore.rolePermissions.some(
-        (rp) =>
-          rp.role_code === userRole &&
-          (rp.permission_code === requiredPerm || rp.permission_code === 'SERVICE_EDIT' || rp.permission_code === 'SERVICE_MANAGE')
-      );
+      userPermissions.includes('SERVICE_MANAGE');
 
     if (!hasPerm) {
       return res.status(403).json({ success: false, error: `Forbidden: requires ${requiredPerm}` });
     }
 
-    const service = memoryStore.services.find((s) => s.id === id && !s.deleted_at);
-    if (!service) {
+    const existing = await catalogRepository.getServiceById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Service not found' });
     }
 
-    const oldStatus = service.is_active;
-    service.is_active = targetActive;
-    service.status = targetActive ? 'ACTIVE' : 'INACTIVE';
-    service.updated_at = new Date().toISOString();
+    const updated = await catalogRepository.updateService(existing.id, {
+      is_active: targetActive,
+      status: targetActive ? 'ACTIVE' : 'INACTIVE',
+    });
+
+    const memService = memoryStore.services.find((s) => s.id === existing.id || s.public_id === existing.public_id);
+    if (memService && updated) {
+      memService.is_active = targetActive;
+      memService.status = targetActive ? 'ACTIVE' : 'INACTIVE';
+    }
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -755,13 +735,13 @@ router.patch('/:id/status', async (req: AuthenticatedRequest, res) => {
       action: targetActive ? 'SERVICE_ACTIVATE' : 'SERVICE_DEACTIVATE',
       entity: 'SERVICE',
       entityId: id,
-      oldValue: { is_active: oldStatus },
-      newValue: { is_active: service.is_active },
+      oldValue: { is_active: existing.is_active },
+      newValue: { is_active: targetActive },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
 
-    return res.json({ success: true, data: service });
+    return res.json({ success: true, data: updated });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to toggle service status';
     return res.status(500).json({ success: false, error: msg });
@@ -775,15 +755,19 @@ router.patch('/:id/status', async (req: AuthenticatedRequest, res) => {
 router.delete('/:id', requirePermission('SERVICE_DELETE'), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const service = memoryStore.services.find((s) => s.id === id && !s.deleted_at);
-    if (!service) {
+    const existing = await catalogRepository.getServiceById(id);
+    if (!existing) {
       return res.status(404).json({ success: false, error: 'Service not found' });
     }
 
-    service.deleted_at = new Date().toISOString();
-    service.is_active = false;
-    service.status = 'INACTIVE';
-    service.updated_at = new Date().toISOString();
+    await catalogRepository.softDeleteService(existing.id);
+
+    const memService = memoryStore.services.find((s) => s.id === existing.id || s.public_id === existing.public_id);
+    if (memService) {
+      memService.deleted_at = new Date().toISOString();
+      memService.is_active = false;
+      memService.status = 'INACTIVE';
+    }
 
     await logAuditEvent({
       userId: req.user?.id,
@@ -792,8 +776,8 @@ router.delete('/:id', requirePermission('SERVICE_DELETE'), async (req: Authentic
       action: 'SERVICE_DELETE',
       entity: 'SERVICE',
       entityId: id,
-      oldValue: { is_active: true, deleted_at: null },
-      newValue: { is_active: false, deleted_at: service.deleted_at },
+      oldValue: { is_active: true },
+      newValue: { is_active: false, deleted_at: new Date().toISOString() },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });

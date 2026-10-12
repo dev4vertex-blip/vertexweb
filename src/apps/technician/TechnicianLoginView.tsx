@@ -3,7 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useApp } from '../../context/AppContext';
 import { VertexLogo } from '../../components/common/VertexLogo';
 import { Button } from '../../components/ui/Button';
-import { isDemoLoginEnabled } from '../../shared/config';
+import { api } from '../../services/api';
 import { Phone, CheckCircle2, AlertCircle, ArrowLeft, ArrowRight, Wrench, ShieldCheck } from 'lucide-react';
 
 interface TechnicianLoginViewProps {
@@ -14,14 +14,13 @@ export const TechnicianLoginView: React.FC<TechnicianLoginViewProps> = ({ onSucc
   const { loginWithOtp } = useAuth();
   const { addToast, setAppRole } = useApp();
 
-  const demoEnabled = isDemoLoginEnabled();
-  const [phone, setPhone] = useState(demoEnabled ? '9999990001' : '');
+  const [phone, setPhone] = useState('');
   const [otpStep, setOtpStep] = useState(false);
-  const [otp, setOtp] = useState(demoEnabled ? '1234' : '');
+  const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
     const cleanPhone = phone.replace(/\D/g, '');
@@ -29,13 +28,17 @@ export const TechnicianLoginView: React.FC<TechnicianLoginViewProps> = ({ onSucc
       setErrorMessage('Please enter a valid 10-digit registered partner number.');
       return;
     }
-    setOtpStep(true);
-    if (demoEnabled) {
-      setOtp('1234');
-      addToast('OTP Sent', 'Development Partner OTP: 1234 (Test simulation)', 'info');
-    } else {
+    setLoading(true);
+    try {
+      await api.sendOtp(cleanPhone);
+      setOtpStep(true);
       setOtp('');
       addToast('OTP Sent', `Verification code sent to +91 ${cleanPhone.slice(-10)}`, 'info');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send verification code.';
+      setErrorMessage(msg);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -48,6 +51,7 @@ export const TechnicianLoginView: React.FC<TechnicianLoginViewProps> = ({ onSucc
         phone,
         otp,
         role: 'TECHNICIAN',
+        platform: 'PARTNER',
       });
       setAppRole('technician');
       addToast('Welcome Partner', `Logged in as ${user.name}`, 'success');
@@ -110,25 +114,13 @@ export const TechnicianLoginView: React.FC<TechnicianLoginViewProps> = ({ onSucc
                 </div>
               </div>
 
-              {demoEnabled && (
-                <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700 text-xs text-slate-400 flex items-center justify-between">
-                  <span>Demo Partner: 9999990001</span>
-                  <button
-                    type="button"
-                    onClick={() => setPhone('9999990001')}
-                    className="text-amber-400 font-bold hover:underline cursor-pointer"
-                  >
-                    Use Demo
-                  </button>
-                </div>
-              )}
-
               <Button
                 type="submit"
                 variant="primary"
+                disabled={loading}
                 className="w-full justify-center py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold border-none"
               >
-                <span>Request OTP</span>
+                <span>{loading ? 'Sending OTP...' : 'Request OTP'}</span>
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </form>
@@ -160,19 +152,6 @@ export const TechnicianLoginView: React.FC<TechnicianLoginViewProps> = ({ onSucc
                   required
                 />
               </div>
-
-              {demoEnabled && (
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>Demo Partner OTP: <strong>1234</strong></span>
-                  <button
-                    type="button"
-                    onClick={() => setOtp('1234')}
-                    className="text-amber-400 font-bold hover:underline cursor-pointer"
-                  >
-                    Auto-fill 1234
-                  </button>
-                </div>
-              )}
 
               <Button
                 type="submit"

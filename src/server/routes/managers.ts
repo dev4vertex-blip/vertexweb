@@ -1,14 +1,15 @@
 import { Router, Response } from 'express';
 import { memoryStore } from '../../db/memoryStore.js';
 import { getDb } from '../../db/client.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission } from '../middleware.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requirePermission } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 import crypto from 'crypto';
 
 const router = Router();
 
-// Strictly authenticate all manager endpoints
+// Strictly authenticate all manager endpoints with BUSINESS platform guard
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * Helper: Resolve manager authorized scope and direct reporting sales members.

@@ -919,7 +919,7 @@ export const AdminManagersView: React.FC = () => {
                 required
                 value={createForm.email}
                 onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
-                placeholder="manager.hub@vertex.demo"
+                placeholder="manager.hub@vertexservices.com"
               />
               {formErrors.email && <p className="text-[11px] text-rose-600 mt-1">{formErrors.email}</p>}
             </div>

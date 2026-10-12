@@ -16,7 +16,6 @@ import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { UnauthorizedView } from '../../components/auth/UnauthorizedView';
 import { UserProfileDropdown } from '../../components/auth/UserProfileDropdown';
-import { isDemoLoginEnabled } from '../../shared/config';
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -386,21 +385,6 @@ export const AdminPlatform: React.FC = () => {
     }
   };
 
-  // Quick switch between admin personas for verification (only when demo enabled)
-  const handleAdminRoleSwitch = async (role: UserRole) => {
-    let email = 'admin@vertex.demo';
-    if (role === 'MANAGER') email = 'manager@vertex.demo';
-    if (role === 'SALES') email = 'sales@vertex.demo';
-    if (role === 'FINANCE') email = 'finance@vertex.demo';
-
-    try {
-      await loginWithCredentials({ email, password: 'Admin@123', role });
-      addToast('Role Switched', `Active perspective: ${role}`, 'info');
-    } catch {
-      addToast('Error', 'Unable to switch demo persona', 'error');
-    }
-  };
-
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   return (
@@ -440,54 +424,6 @@ export const AdminPlatform: React.FC = () => {
 
           {/* Right Header: Role Switcher & User Profile Dropdown */}
           <div className="flex items-center gap-3">
-            {/* Quick Role Switcher for verification - ONLY visible when demo login is enabled */}
-            {isDemoLoginEnabled() && (
-              <div className="flex items-center bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-                <span className="text-[11px] text-slate-400 mr-2 font-medium hidden sm:inline">
-                  Test Role:
-                </span>
-                <select
-                  value={user?.role || 'SUPER_ADMIN'}
-                  onChange={(e) => handleAdminRoleSwitch(e.target.value as UserRole)}
-                  className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer pr-1"
-                >
-                  <option value="SUPER_ADMIN" className="bg-slate-900 text-white">
-                    SUPER_ADMIN (Full)
-                  </option>
-                  <option value="ADMIN" className="bg-slate-900 text-white">
-                    ADMIN (Operations & Fleet)
-                  </option>
-                  <option value="MANAGER" className="bg-slate-900 text-white">
-                    MANAGER (Ops & Fleet)
-                  </option>
-                  <option value="SALES" className="bg-slate-900 text-white">
-                    SALES (Catalog & AMC)
-                  </option>
-                  <option value="SALES_TEAM" className="bg-slate-900 text-white">
-                    SALES_TEAM (Leads & CRM)
-                  </option>
-                  <option value="FINANCE" className="bg-slate-900 text-white">
-                    FINANCE (Payouts & Dues)
-                  </option>
-                  <option value="MARKETING" className="bg-slate-900 text-white">
-                    MARKETING (Campaigns & Leads)
-                  </option>
-                  <option value="OPERATIONS" className="bg-slate-900 text-white">
-                    OPERATIONS (Bookings & Technicians)
-                  </option>
-                  <option value="SUPPORT" className="bg-slate-900 text-white">
-                    SUPPORT (Customers & Tickets)
-                  </option>
-                  <option value="HR" className="bg-slate-900 text-white">
-                    HR (Personnel & Staff Leaves)
-                  </option>
-                  <option value="PAYROLL" className="bg-slate-900 text-white">
-                    PAYROLL (Salaries & Runs)
-                  </option>
-                </select>
-              </div>
-            )}
-
             {/* Centralized User Profile Dropdown */}
             <UserProfileDropdown />
           </div>

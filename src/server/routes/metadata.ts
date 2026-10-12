@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { getDb } from '../../db/client.js';
 import { memoryStore } from '../../db/memoryStore.js';
-import { authenticateUser, requirePermission, AuthenticatedRequest } from '../middleware.js';
+import { authenticateUser, requirePlatform, requirePermission, AuthenticatedRequest } from '../middleware.js';
 
 const router = Router();
 
-// Apply auth to metadata queries
+// Apply auth and Business Hub platform guard to metadata queries
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * GET /api/v1/roles
@@ -14,17 +15,13 @@ router.use(authenticateUser);
  */
 router.get('/roles', async (req: AuthenticatedRequest, res) => {
   try {
-    try {
-      const { pglite } = await getDb();
-      const result = await pglite.query(`SELECT * FROM roles ORDER BY code ASC`);
-      if (result.rows && result.rows.length > 0) {
-        return res.json({ success: true, data: result.rows });
-      }
-    } catch {
-      // Fallback to memoryStore
-    }
-    return res.json({ success: true, data: memoryStore.roles });
+    const { pglite } = await getDb();
+    const result = await pglite.query(`SELECT * FROM roles ORDER BY code ASC`);
+    return res.json({ success: true, data: result.rows || [] });
   } catch (err: any) {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(500).json({ success: false, error: { message: err?.message || 'Database error loading roles' } });
+    }
     return res.json({ success: true, data: memoryStore.roles });
   }
 });
@@ -35,17 +32,13 @@ router.get('/roles', async (req: AuthenticatedRequest, res) => {
  */
 router.get('/permissions', async (req: AuthenticatedRequest, res) => {
   try {
-    try {
-      const { pglite } = await getDb();
-      const result = await pglite.query(`SELECT * FROM permissions ORDER BY category ASC, code ASC`);
-      if (result.rows && result.rows.length > 0) {
-        return res.json({ success: true, data: result.rows });
-      }
-    } catch {
-      // Fallback to memoryStore
-    }
-    return res.json({ success: true, data: memoryStore.permissions });
+    const { pglite } = await getDb();
+    const result = await pglite.query(`SELECT * FROM permissions ORDER BY category ASC, code ASC`);
+    return res.json({ success: true, data: result.rows || [] });
   } catch (err: any) {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(500).json({ success: false, error: { message: err?.message || 'Database error loading permissions' } });
+    }
     return res.json({ success: true, data: memoryStore.permissions });
   }
 });
@@ -56,6 +49,9 @@ router.get('/permissions', async (req: AuthenticatedRequest, res) => {
  */
 router.get('/departments', async (req: AuthenticatedRequest, res) => {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.json({ success: true, data: [] });
+    }
     const deps = (memoryStore.departments || []).filter((d) => !d.deleted_at);
     return res.json({ success: true, data: deps });
   } catch (err: any) {
@@ -69,6 +65,9 @@ router.get('/departments', async (req: AuthenticatedRequest, res) => {
  */
 router.get('/designations', async (req: AuthenticatedRequest, res) => {
   try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.json({ success: true, data: [] });
+    }
     const desigs = memoryStore.designations || [];
     return res.json({ success: true, data: desigs });
   } catch (err: any) {

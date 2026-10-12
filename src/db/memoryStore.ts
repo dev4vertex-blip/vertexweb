@@ -2008,9 +2008,26 @@ class MemoryStore {
     for (const code of PARTNER_PERMISSIONS) {
       this.rolePermissions.push({ role_code: 'PARTNER', permission_code: code });
     }
+    if (process.env.NODE_ENV === 'production') {
+      // In production, memoryStore must NEVER hold or serve fake business data
+      this.users = [];
+      this.customerProfiles = [];
+      this.technicianProfiles = [];
+      this.salesProfiles = [];
+      this.managerProfiles = [];
+      this.financeProfiles = [];
+      this.bookings = [];
+      this.leads = [];
+      this.payments = [];
+      this.promotions = [];
+    }
   }
 
   public async executeQuery<T = any>(sql: string, params: any[] = []): Promise<{ rows: T[]; rowCount: number }> {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('[CRITICAL PRODUCTION ERROR] memoryStore query fallback is strictly forbidden in production. PostgreSQL connection is mandatory.');
+    }
+
     const cleanSql = sql.replace(/\s+/g, ' ').trim();
 
     // 0. information_schema.tables

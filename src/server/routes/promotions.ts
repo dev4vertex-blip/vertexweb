@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { memoryStore, PromotionRecord } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission } from '../middleware.js';
+import { authenticateUser, AuthenticatedRequest, requirePlatform, requirePermission } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 
 const router = Router();
 
-// Require authentication for all promotion management endpoints
+// Require authentication and BUSINESS platform guard for all promotion management endpoints
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * GET /api/v1/promotions

@@ -2,14 +2,15 @@ import express from 'express';
 import crypto from 'crypto';
 import { getDb } from '../../db/client.js';
 import { memoryStore, type LeadRecord, type LeadFollowupRecord } from '../../db/memoryStore.js';
-import { authenticateUser, requirePermission, requireAnyPermission, type AuthenticatedRequest } from '../middleware.js';
+import { authenticateUser, requirePlatform, requirePermission, requireAnyPermission, type AuthenticatedRequest } from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 import { getManagerScope } from './managers.js';
 
 const router = express.Router();
 
-// Guard all leads endpoints with authentication middleware
+// Guard all leads endpoints with authentication and Business Hub platform guard
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * GET /api/v1/leads
@@ -392,43 +393,39 @@ router.post('/', requirePermission('LEAD_CREATE'), async (req: AuthenticatedRequ
 
     memoryStore.leads.unshift(newLead);
 
-    // Save to database if available
-    try {
-      const { pglite } = await getDb();
-      await pglite.query(
-        `INSERT INTO leads (
-          id, public_id, customer_name, company_name, phone, alternate_phone, email, address,
-          service_interest, service_category, requirement_details, estimated_value, lead_source,
-          priority, stage, status, assigned_to, created_by, city_id, expected_followup_date, expected_followup_time, notes
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
-        [
-          newLead.id,
-          newLead.public_id,
-          newLead.customer_name,
-          newLead.company_name,
-          newLead.phone,
-          newLead.alternate_phone,
-          newLead.email,
-          newLead.address,
-          newLead.service_interest,
-          newLead.service_category,
-          newLead.requirement_details,
-          newLead.estimated_value,
-          newLead.lead_source,
-          newLead.priority,
-          newLead.stage,
-          newLead.status,
-          newLead.assigned_to,
-          newLead.created_by,
-          newLead.city_id,
-          newLead.expected_followup_date || null,
-          newLead.expected_followup_time || null,
-          newLead.notes,
-        ]
-      ).catch(() => {});
-    } catch {
-      // Memory fallback is primary
-    }
+    // Save to PostgreSQL database as authoritative single source of truth
+    const { pglite } = await getDb();
+    await pglite.query(
+      `INSERT INTO leads (
+        id, public_id, customer_name, company_name, phone, alternate_phone, email, address,
+        service_interest, service_category, requirement_details, estimated_value, lead_source,
+        priority, stage, status, assigned_to, created_by, city_id, expected_followup_date, expected_followup_time, notes
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)`,
+      [
+        newLead.id,
+        newLead.public_id,
+        newLead.customer_name,
+        newLead.company_name,
+        newLead.phone,
+        newLead.alternate_phone,
+        newLead.email,
+        newLead.address,
+        newLead.service_interest,
+        newLead.service_category,
+        newLead.requirement_details,
+        newLead.estimated_value,
+        newLead.lead_source,
+        newLead.priority,
+        newLead.stage,
+        newLead.status,
+        newLead.assigned_to,
+        newLead.created_by,
+        newLead.city_id,
+        newLead.expected_followup_date || null,
+        newLead.expected_followup_time || null,
+        newLead.notes,
+      ]
+    );
 
     // Audit log
     await logAuditEvent({
@@ -557,6 +554,36 @@ router.put('/:id', requireAnyPermission(['LEAD_EDIT', 'LEAD_UPDATE']), async (re
     if (expected_followup_time !== undefined) lead.expected_followup_time = expected_followup_time;
     if (notes !== undefined) lead.notes = notes;
     lead.updated_at = new Date().toISOString();
+
+    // Persist update to PostgreSQL
+    const { pglite } = await getDb();
+    await pglite.query(
+      `UPDATE leads
+       SET customer_name = $1, phone = $2, alternate_phone = $3, email = $4,
+           address = $5, service_interest = $6, service_category = $7,
+           requirement_details = $8, estimated_value = $9, lead_source = $10,
+           priority = $11, stage = $12, status = $13, city_id = $14,
+           notes = $15, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $16 OR public_id = $16`,
+      [
+        lead.customer_name,
+        lead.phone,
+        lead.alternate_phone,
+        lead.email,
+        lead.address,
+        lead.service_interest,
+        lead.service_category,
+        lead.requirement_details,
+        lead.estimated_value,
+        lead.lead_source,
+        lead.priority,
+        lead.stage,
+        lead.status,
+        lead.city_id,
+        lead.notes,
+        lead.id,
+      ]
+    );
 
     // Audit log
     await logAuditEvent({

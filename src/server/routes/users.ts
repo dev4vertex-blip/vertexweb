@@ -3,12 +3,13 @@ import crypto from 'crypto';
 import { getDb } from '../../db/client.js';
 import { memoryStore } from '../../db/memoryStore.js';
 import { hashPassword, getFullUserById, logAuditEvent } from '../auth.js';
-import { authenticateUser, requirePermission, AuthenticatedRequest } from '../middleware.js';
+import { authenticateUser, requirePlatform, requirePermission, AuthenticatedRequest } from '../middleware.js';
 
 const router = Router();
 
-// Apply authentication to all user management routes
+// Apply authentication and BUSINESS platform guard to user & customer administrative management routes
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
 
 /**
  * GET /api/v1/users
@@ -368,24 +369,25 @@ router.post('/', requirePermission('USER_CREATE'), async (req: AuthenticatedRequ
       }
     }
 
-    // Sync to memoryStore fallback users
-    memoryStore.users.push({
-      id: newUserId,
-      public_id: publicId,
-      name: body.name.trim(),
-      email: cleanEmail,
-      phone: cleanPhone ? `+91 ${cleanPhone}` : null,
-      password_hash: passwordHash,
-      role: body.role,
-      status: initialStatus,
-      profile_image: body.name.slice(0, 2).toUpperCase(),
-      city_id: cityId || 1,
-      department: body.department || null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      last_login_at: null,
-      deleted_at: null,
-    });
+    // Sync to memoryStore fallback users in local development only
+    if (process.env.NODE_ENV !== 'production') {
+      memoryStore.users.push({
+        id: newUserId,
+        public_id: publicId,
+        name: body.name.trim(),
+        email: cleanEmail,
+        phone: cleanPhone ? `+91 ${cleanPhone}` : null,
+        password_hash: passwordHash,
+        role: body.role,
+        status: initialStatus,
+        profile_image: body.profileImage || null,
+        city_id: cityId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        last_login_at: null,
+        deleted_at: null,
+      });
+    }
 
     // 8. Write Audit Log
     await logAuditEvent({
@@ -782,14 +784,10 @@ router.post('/:id/reset-password', requirePermission('USER_UPDATE'), async (req:
     const passwordToSet = newPassword || 'Vertex@2026';
     const passwordHash = await hashPassword(passwordToSet);
 
-    try {
-      await pglite.query(
-        `UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-        [passwordHash, targetUserId]
-      );
-    } catch (_dbErr) {
-      // Memory store resilient mode
-    }
+    await pglite.query(
+      `UPDATE users SET password_hash = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [passwordHash, targetUserId]
+    );
 
     // Also update in-memory store if present
     const memUser = memoryStore.users.find((u) => u.id === targetUserId || u.public_id === targetUserId);
@@ -868,14 +866,10 @@ router.patch('/:id/role', requirePermission('USER_UPDATE'), async (req: Authenti
     }
 
     const oldRole = targetUser.role;
-    try {
-      await pglite.query(
-        `UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
-        [role, targetUserId]
-      );
-    } catch (_dbErr) {
-      // Memory store resilient mode
-    }
+    await pglite.query(
+      `UPDATE users SET role = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [role, targetUserId]
+    );
 
     const memUser = memoryStore.users.find((u) => u.id === targetUserId || u.public_id === targetUserId);
     if (memUser) {

@@ -22,8 +22,12 @@ import promotionsRouter from './src/server/routes/promotions.js';
 import locationsRouter from './src/server/routes/locations.js';
 import salesRouter from './src/server/routes/sales.js';
 import managersRouter from './src/server/routes/managers.js';
+import { validateProductionEnvironment } from './src/server/productionGuard.js';
 
 async function startServer() {
+  // Validate production safety rules at startup (fails fast if secrets or DB are missing)
+  await validateProductionEnvironment();
+
   const app = express();
   const PORT = 3000;
 
@@ -68,13 +72,14 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Health check endpoint
-  app.get('/api/health', async (req, res) => {
+  // Safe health check endpoints (/health and /api/health)
+  const healthHandler = async (req: express.Request, res: express.Response) => {
     try {
       const { testDatabaseConnection } = await import('./src/db/client.js');
       const dbStatus = await testDatabaseConnection();
       res.json({
         status: 'ok',
+        environment: process.env.NODE_ENV || 'development',
         engine: 'VERTEX Enterprise Express',
         database: {
           provider: 'Supabase PostgreSQL',
@@ -86,6 +91,7 @@ async function startServer() {
     } catch {
       res.json({
         status: 'ok',
+        environment: process.env.NODE_ENV || 'development',
         engine: 'VERTEX Enterprise Express',
         database: {
           provider: 'Supabase PostgreSQL',
@@ -95,7 +101,10 @@ async function startServer() {
         timestamp: new Date().toISOString(),
       });
     }
-  });
+  };
+
+  app.get('/health', healthHandler);
+  app.get('/api/health', healthHandler);
 
   // Verify Supabase PostgreSQL connection and run migrations
   try {
@@ -105,10 +114,16 @@ async function startServer() {
       await seedDatabase();
       console.log('[Supabase PostgreSQL] Database connected and initialized.');
     } else {
-      console.log('[VERTEX Core] Database notice: Resilient in-memory mode active.');
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`[CRITICAL PRODUCTION ERROR] PostgreSQL database connection failed: ${dbTest.message}`);
+      }
+      console.log('[VERTEX Core] Database notice: Resilient in-memory mode active in local development.');
     }
   } catch (dbErr: any) {
-    console.log('[VERTEX Core] Database notice: Resilient in-memory mode active.');
+    if (process.env.NODE_ENV === 'production') {
+      throw dbErr;
+    }
+    console.log('[VERTEX Core] Database notice: Resilient in-memory mode active in local development.');
   }
 
   // Mount API endpoints FIRST

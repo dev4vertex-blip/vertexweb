@@ -5,7 +5,7 @@ import { VertexLogo } from '../components/common/VertexLogo';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
-import { UserRole } from '../types/auth';
+import { api } from '../services/api';
 import {
   User,
   Wrench,
@@ -14,95 +14,61 @@ import {
   ArrowLeft,
   Sparkles,
   Phone,
-  CheckCircle2,
   Lock,
   Building,
   Home,
   Mail,
   KeyRound,
   AlertCircle,
-  Clock,
-  Info,
 } from 'lucide-react';
-import { isDemoLoginEnabled } from '../shared/config';
 
 export const LoginView: React.FC = () => {
   const { loginWithCredentials, loginWithOtp } = useAuth();
   const { addToast, setAppRole } = useApp();
 
-  const demoEnabled = isDemoLoginEnabled();
   const [activeTab, setActiveTab] = useState<'customer' | 'technician' | 'admin'>('customer');
 
   // Customer State
-  const [customerPhone, setCustomerPhone] = useState(demoEnabled ? '9999990002' : '');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [customerOtpStep, setCustomerOtpStep] = useState(false);
   const [customerOtp, setCustomerOtp] = useState('');
   const [customerLoading, setCustomerLoading] = useState(false);
 
   // Technician State
-  const [techPhone, setTechPhone] = useState(demoEnabled ? '9999990001' : '');
+  const [techPhone, setTechPhone] = useState('');
   const [techOtpStep, setTechOtpStep] = useState(false);
   const [techOtp, setTechOtp] = useState('');
   const [techLoading, setTechLoading] = useState(false);
 
   // Admin State
-  const [adminEmail, setAdminEmail] = useState(demoEnabled ? 'admin@vertex.demo' : '');
-  const [adminPassword, setAdminPassword] = useState(demoEnabled ? 'Admin@123' : '');
-  const [adminSelectedRole, setAdminSelectedRole] = useState<UserRole>('SUPER_ADMIN');
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
 
   // Error message
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Quick Demo Accounts for 1-Click test filling
-  const adminDemoUsers: {
-    role: UserRole;
-    email: string;
-    label: string;
-    desc: string;
-    scope: string;
-  }[] = [
-    {
-      role: 'SUPER_ADMIN',
-      email: 'admin@vertex.demo',
-      label: 'Super Admin',
-      desc: 'Full Access',
-      scope: 'Unrestricted access to all 21 modules & settings',
-    },
-    {
-      role: 'MANAGER',
-      email: 'manager@vertex.demo',
-      label: 'Manager',
-      desc: 'Ops & Fleet',
-      scope: 'Bookings, Technicians, Sales Team, Services & Support',
-    },
-    {
-      role: 'SALES',
-      email: 'sales@vertex.demo',
-      label: 'Sales',
-      desc: 'Growth & AMC',
-      scope: 'Bookings, Customers, Catalog & AMC Subscriptions',
-    },
-    {
-      role: 'FINANCE',
-      email: 'finance@vertex.demo',
-      label: 'Finance',
-      desc: 'Billing & Payouts',
-      scope: 'Payments, Invoices, Commissions & Financial Reports',
-    },
-  ];
-
   // Handlers
-  const handleCustomerSendOtp = (e: React.FormEvent) => {
+  const handleCustomerSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    if (!customerPhone || customerPhone.replace(/\D/g, '').length < 10) {
+    const cleanPhone = customerPhone.replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) {
       setErrorMessage('Please enter a valid 10-digit mobile number.');
       return;
     }
-    setCustomerOtpStep(true);
-    setCustomerOtp('1234'); // Pre-fill with dev OTP for convenience
-    addToast('OTP Generated', 'Development OTP: 1234 (Simulation)', 'info');
+    setCustomerLoading(true);
+    try {
+      await api.sendOtp(cleanPhone);
+      setCustomerOtpStep(true);
+      setCustomerOtp('');
+      addToast('OTP Sent', `Verification code sent to +91 ${cleanPhone.slice(-10)}`, 'info');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send verification code.';
+      setErrorMessage(msg);
+    } finally {
+      setCustomerLoading(false);
+    }
   };
 
   const handleCustomerVerifyOtp = async (e: React.FormEvent) => {
@@ -118,23 +84,33 @@ export const LoginView: React.FC = () => {
       setAppRole('customer');
       addToast('Welcome to VERTEX', `Logged in as ${user.name}`, 'success');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Invalid OTP entered.';
+      const msg = err instanceof Error ? err.message : 'Invalid verification code.';
       setErrorMessage(msg);
     } finally {
       setCustomerLoading(false);
     }
   };
 
-  const handleTechSendOtp = (e: React.FormEvent) => {
+  const handleTechSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    if (!techPhone || techPhone.replace(/\D/g, '').length < 10) {
-      setErrorMessage('Please enter a valid 10-digit mobile number.');
+    const cleanPhone = techPhone.replace(/\D/g, '');
+    if (!cleanPhone || cleanPhone.length < 10) {
+      setErrorMessage('Please enter a valid 10-digit registered partner mobile number.');
       return;
     }
-    setTechOtpStep(true);
-    setTechOtp('1234'); // Pre-fill with dev OTP for convenience
-    addToast('OTP Generated', 'Development OTP: 1234 (Simulation)', 'info');
+    setTechLoading(true);
+    try {
+      await api.sendOtp(cleanPhone);
+      setTechOtpStep(true);
+      setTechOtp('');
+      addToast('OTP Sent', `Verification code sent to +91 ${cleanPhone.slice(-10)}`, 'info');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send verification code.';
+      setErrorMessage(msg);
+    } finally {
+      setTechLoading(false);
+    }
   };
 
   const handleTechVerifyOtp = async (e: React.FormEvent) => {
@@ -150,7 +126,7 @@ export const LoginView: React.FC = () => {
       setAppRole('technician');
       addToast('Technician Workspace', `Welcome back, ${user.name}`, 'success');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Invalid OTP entered.';
+      const msg = err instanceof Error ? err.message : 'Invalid verification code.';
       setErrorMessage(msg);
     } finally {
       setTechLoading(false);
@@ -165,23 +141,32 @@ export const LoginView: React.FC = () => {
       const user = await loginWithCredentials({
         email: adminEmail,
         password: adminPassword,
-        role: adminSelectedRole,
       });
+
+      const isStaffRole = [
+        'SUPER_ADMIN',
+        'ADMIN',
+        'MANAGER',
+        'SALES',
+        'SALES_TEAM',
+        'FINANCE',
+        'MARKETING',
+        'OPERATIONS',
+        'SUPPORT',
+      ].includes(user.role);
+
+      if (!isStaffRole) {
+        throw new Error('Access denied. VERTEX Admin Portal is reserved for authorized staff personnel.');
+      }
+
       setAppRole('admin');
       addToast('Admin Authenticated', `Signed in as ${user.role} (${user.name})`, 'success');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Authentication failed.';
+      const msg = err instanceof Error ? err.message : 'Authentication failed. Please verify credentials.';
       setErrorMessage(msg);
     } finally {
       setAdminLoading(false);
     }
-  };
-
-  const selectAdminDemoUser = (user: (typeof adminDemoUsers)[0]) => {
-    setAdminEmail(user.email);
-    setAdminPassword('Admin@123');
-    setAdminSelectedRole(user.role);
-    setErrorMessage(null);
   };
 
   return (
@@ -191,7 +176,7 @@ export const LoginView: React.FC = () => {
         <VertexLogo size="md" showSubtitle />
         <div className="flex items-center gap-3">
           <Badge variant="neutral" size="sm">
-            Step 2: RBAC & Central Auth
+            Production Security Enforced
           </Badge>
           <span className="text-xs text-slate-500 font-medium hidden sm:inline">
             Home & Office Maintenance Operating System
@@ -218,7 +203,7 @@ export const LoginView: React.FC = () => {
           </p>
         </div>
 
-        {/* Global Error Banner if any */}
+        {/* Global Error Banner */}
         {errorMessage && (
           <div className="w-full max-w-2xl mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2.5 text-xs text-rose-800 animate-in fade-in">
             <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
@@ -231,6 +216,7 @@ export const LoginView: React.FC = () => {
           {/* Tab Selector */}
           <div className="grid grid-cols-3 p-1.5 bg-slate-200/80 rounded-xl mb-6">
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('customer');
                 setErrorMessage(null);
@@ -246,6 +232,7 @@ export const LoginView: React.FC = () => {
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('technician');
                 setErrorMessage(null);
@@ -261,6 +248,7 @@ export const LoginView: React.FC = () => {
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setActiveTab('admin');
                 setErrorMessage(null);
@@ -291,18 +279,6 @@ export const LoginView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Development Notice */}
-              {demoEnabled && (
-                <div className="mb-5 p-3 rounded-lg bg-blue-50/60 border border-blue-100 flex items-start gap-2.5 text-xs text-blue-900">
-                  <Info className="w-4 h-4 shrink-0 text-blue-600 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Development Sandbox:</span> Real SMS gateway is
-                    disabled. Use registered test mobile <strong>9999990002</strong> and simulation
-                    OTP <strong>1234</strong>.
-                  </div>
-                </div>
-              )}
-
               {!customerOtpStep ? (
                 /* Step 1: Phone Number */
                 <form onSubmit={handleCustomerSendOtp} className="space-y-4">
@@ -317,34 +293,23 @@ export const LoginView: React.FC = () => {
                       </span>
                       <input
                         type="tel"
+                        maxLength={10}
                         value={customerPhone}
-                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, ''))}
                         className="w-full px-3 py-2.5 text-sm text-slate-900 focus:outline-none"
-                        placeholder="9999990002"
+                        placeholder="Enter 10-digit number"
                         required
                       />
                     </div>
                   </div>
 
-                  {demoEnabled && (
-                    <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between">
-                      <span className="text-slate-500">Official Demo Account:</span>
-                      <button
-                        type="button"
-                        onClick={() => setCustomerPhone('9999990002')}
-                        className="font-bold text-blue-600 hover:underline cursor-pointer"
-                      >
-                        Use Rahul Sharma (9999990002)
-                      </button>
-                    </div>
-                  )}
-
                   <Button
                     type="submit"
+                    disabled={customerLoading}
                     className="w-full h-11 text-sm font-semibold"
                     rightIcon={<ArrowRight className="w-4 h-4" />}
                   >
-                    Continue to OTP Verification
+                    {customerLoading ? 'Sending Verification Code...' : 'Continue to OTP Verification'}
                   </Button>
                 </form>
               ) : (
@@ -352,13 +317,13 @@ export const LoginView: React.FC = () => {
                 <form onSubmit={handleCustomerVerifyOtp} className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs text-slate-500">Sent development code to:</span>
-                      <p className="text-sm font-bold text-slate-900">+91 {customerPhone}</p>
+                      <span className="text-xs text-slate-500">Sent verification code to:</span>
+                      <p className="text-sm font-bold text-slate-900">+91 {customerPhone.slice(-10)}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setCustomerOtpStep(false)}
-                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <ArrowLeft className="w-3 h-3" /> Change Number
                     </button>
@@ -374,30 +339,18 @@ export const LoginView: React.FC = () => {
                       value={customerOtp}
                       onChange={(e) => setCustomerOtp(e.target.value)}
                       className="w-full px-4 py-3 text-center text-xl tracking-[0.5em] font-mono font-bold text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
-                      placeholder="1234"
+                      placeholder="••••"
                       required
                     />
-                    {demoEnabled && (
-                      <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500">
-                        <span>Mock OTP: 1234</span>
-                        <button
-                          type="button"
-                          onClick={() => setCustomerOtp('1234')}
-                          className="text-blue-600 font-semibold hover:underline"
-                        >
-                          Auto-fill 1234
-                        </button>
-                      </div>
-                    )}
                   </div>
 
                   <Button
                     type="submit"
-                    isLoading={customerLoading}
+                    disabled={customerLoading}
                     className="w-full h-11 text-sm font-semibold"
                     rightIcon={<ArrowRight className="w-4 h-4" />}
                   >
-                    Verify & Access Customer Dashboard
+                    {customerLoading ? 'Verifying Session...' : 'Verify & Access Customer Dashboard'}
                   </Button>
                 </form>
               )}
@@ -419,17 +372,6 @@ export const LoginView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Development Notice */}
-              {demoEnabled && (
-                <div className="mb-5 p-3 rounded-lg bg-amber-50/70 border border-amber-100 flex items-start gap-2.5 text-xs text-amber-900">
-                  <Info className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Partner Sandbox:</span> Use registered technician
-                    mobile <strong>9999990001</strong> and development OTP <strong>1234</strong>.
-                  </div>
-                </div>
-              )}
-
               {!techOtpStep ? (
                 /* Step 1: Tech Phone Number */
                 <form onSubmit={handleTechSendOtp} className="space-y-4">
@@ -444,32 +386,23 @@ export const LoginView: React.FC = () => {
                       </span>
                       <input
                         type="tel"
+                        maxLength={10}
                         value={techPhone}
-                        onChange={(e) => setTechPhone(e.target.value)}
+                        onChange={(e) => setTechPhone(e.target.value.replace(/\D/g, ''))}
                         className="w-full px-3 py-2.5 text-sm text-slate-900 focus:outline-none"
-                        placeholder="9999990001"
+                        placeholder="Enter registered mobile"
                         required
                       />
                     </div>
                   </div>
 
-                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs flex items-center justify-between">
-                    <span className="text-slate-500">Official Partner Account:</span>
-                    <button
-                      type="button"
-                      onClick={() => setTechPhone('9999990001')}
-                      className="font-bold text-amber-700 hover:underline cursor-pointer"
-                    >
-                      Use Raj Technician (9999990001)
-                    </button>
-                  </div>
-
                   <Button
                     type="submit"
-                    className="w-full h-11 text-sm font-semibold bg-slate-900 hover:bg-slate-800"
+                    disabled={techLoading}
+                    className="w-full h-11 text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white"
                     rightIcon={<ArrowRight className="w-4 h-4" />}
                   >
-                    Continue to Partner Verification
+                    {techLoading ? 'Sending Verification Code...' : 'Continue to Partner Verification'}
                   </Button>
                 </form>
               ) : (
@@ -478,12 +411,12 @@ export const LoginView: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs text-slate-500">Partner Mobile:</span>
-                      <p className="text-sm font-bold text-slate-900">+91 {techPhone}</p>
+                      <p className="text-sm font-bold text-slate-900">+91 {techPhone.slice(-10)}</p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setTechOtpStep(false)}
-                      className="text-xs text-slate-600 hover:underline flex items-center gap-1"
+                      className="text-xs text-slate-600 hover:underline flex items-center gap-1 cursor-pointer"
                     >
                       <ArrowLeft className="w-3 h-3" /> Change Number
                     </button>
@@ -499,30 +432,18 @@ export const LoginView: React.FC = () => {
                       value={techOtp}
                       onChange={(e) => setTechOtp(e.target.value)}
                       className="w-full px-4 py-3 text-center text-xl tracking-[0.5em] font-mono font-bold text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-                      placeholder="1234"
+                      placeholder="••••"
                       required
                     />
-                    {demoEnabled && (
-                      <div className="flex items-center justify-between mt-1.5 text-xs text-slate-500">
-                        <span>Mock OTP: 1234</span>
-                        <button
-                          type="button"
-                          onClick={() => setTechOtp('1234')}
-                          className="text-amber-700 font-semibold hover:underline"
-                        >
-                          Auto-fill 1234
-                        </button>
-                      </div>
-                    )}
                   </div>
 
                   <Button
                     type="submit"
-                    isLoading={techLoading}
-                    className="w-full h-11 text-sm font-semibold bg-slate-900 hover:bg-slate-800"
+                    disabled={techLoading}
+                    className="w-full h-11 text-sm font-semibold bg-slate-900 hover:bg-slate-800 text-white"
                     rightIcon={<ArrowRight className="w-4 h-4" />}
                   >
-                    Verify & Enter Technician Workspace
+                    {techLoading ? 'Verifying...' : 'Verify & Enter Technician Workspace'}
                   </Button>
                 </form>
               )}
@@ -544,47 +465,6 @@ export const LoginView: React.FC = () => {
                 </div>
               </div>
 
-              {/* 4 Demo Admin Accounts Picker */}
-              {demoEnabled && (
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
-                      Select Demo Administrative Profile
-                    </label>
-                    <span className="text-[11px] text-blue-600 font-medium">1-Click Fast Fill</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {adminDemoUsers.map((item) => {
-                      const isSelected = adminSelectedRole === item.role;
-                      return (
-                        <button
-                          key={item.role}
-                          type="button"
-                          onClick={() => selectAdminDemoUser(item)}
-                          className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                            isSelected
-                              ? 'border-slate-900 bg-slate-900 text-white shadow-xs'
-                              : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700'
-                          }`}
-                        >
-                          <div className="text-xs font-bold leading-tight flex items-center justify-between">
-                            <span>{item.label}</span>
-                            {isSelected && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
-                          </div>
-                          <div
-                            className={`text-[10px] mt-0.5 font-mono ${
-                              isSelected ? 'text-slate-300' : 'text-slate-400'
-                            }`}
-                          >
-                            {item.desc}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
               {/* Form with Email & Password */}
               <form onSubmit={handleAdminSubmit} className="space-y-4">
                 <div>
@@ -600,7 +480,7 @@ export const LoginView: React.FC = () => {
                       value={adminEmail}
                       onChange={(e) => setAdminEmail(e.target.value)}
                       className="w-full px-3 py-2.5 text-sm text-slate-900 focus:outline-none"
-                      placeholder="admin@vertex.demo"
+                      placeholder="admin@vertexservices.com"
                       required
                     />
                   </div>
@@ -625,26 +505,18 @@ export const LoginView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Selected Role Scope Notice */}
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Lock className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="font-bold text-slate-900">
-                      Clearance: {adminSelectedRole.replace('_', ' ')}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {adminDemoUsers.find((u) => u.role === adminSelectedRole)?.scope}
-                  </p>
+                <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span>Strict RBAC: System dynamically assigns authorized dashboard clearance upon credential verification.</span>
                 </div>
 
                 <Button
                   type="submit"
-                  isLoading={adminLoading}
+                  disabled={adminLoading}
                   className="w-full h-11 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white"
                   rightIcon={<ArrowRight className="w-4 h-4" />}
                 >
-                  Enter Admin Platform as {adminSelectedRole.replace('_', ' ')}
+                  {adminLoading ? 'Authenticating Staff...' : 'Sign In to Admin Platform'}
                 </Button>
               </form>
             </Card>

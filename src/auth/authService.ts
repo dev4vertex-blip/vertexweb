@@ -310,26 +310,6 @@ export class AuthService {
       this.saveSession(session);
       return session.user;
     } catch (err: any) {
-      // If server error or user is in demo mode without network, fallback to local demo
-      const normalizedEmail = credentials.email.trim().toLowerCase();
-      let fallbackUser: AuthUser | undefined;
-
-      if (normalizedEmail === 'admin@vertex.demo') fallbackUser = DEMO_ACCOUNTS.SUPER_ADMIN;
-      else if (normalizedEmail === 'manager@vertex.demo') fallbackUser = DEMO_ACCOUNTS.MANAGER;
-      else if (normalizedEmail === 'sales@vertex.demo') fallbackUser = DEMO_ACCOUNTS.SALES;
-      else if (normalizedEmail === 'finance@vertex.demo') fallbackUser = DEMO_ACCOUNTS.FINANCE;
-      else if (credentials.role && DEMO_ACCOUNTS[credentials.role]) fallbackUser = DEMO_ACCOUNTS[credentials.role];
-
-      if (fallbackUser) {
-        const session: AuthSession = {
-          token: `vtx_local_${fallbackUser.id}`,
-          user: fallbackUser,
-          expiresAt: Date.now() + TOKEN_TTL_MS,
-        };
-        this.saveSession(session);
-        return session.user;
-      }
-
       throw err;
     }
   }
@@ -353,19 +333,7 @@ export class AuthService {
       this.saveSession(session);
       return session.user;
     } catch (err: any) {
-      const cleanPhone = credentials.phone.replace(/\D/g, '');
-      const isTech = credentials.role === 'TECHNICIAN';
-      const fallback = isTech ? DEMO_ACCOUNTS.TECHNICIAN : DEMO_ACCOUNTS.CUSTOMER;
-      const targetUser = { ...fallback, phone: cleanPhone || fallback.phone };
-
-      const session: AuthSession = {
-        token: `vtx_local_${targetUser.id}`,
-        user: targetUser,
-        expiresAt: Date.now() + TOKEN_TTL_MS,
-      };
-
-      this.saveSession(session);
-      return session.user;
+      throw err;
     }
   }
 

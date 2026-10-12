@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { DemoRoleBar } from './components/common/DemoRoleBar';
 import { ToastContainer } from './components/ui/Toast';
 import { AdminApp } from './apps/admin/AdminApp';
 import { CustomerAppRoot } from './apps/customer/CustomerAppRoot';
 import { TechnicianAppRoot } from './apps/technician/TechnicianAppRoot';
 import { LoginView } from './views/LoginView';
-import { getAppTarget, isDemoLoginEnabled } from './shared/config';
+import { getAppTarget } from './shared/config';
 
 const AppContent: React.FC = () => {
   const { currentAppRole, setAppRole, toasts, removeToast } = useApp();
@@ -67,7 +66,6 @@ const AppContent: React.FC = () => {
   if (activeAppTarget === 'admin') {
     return (
       <div className="min-h-screen bg-slate-900 text-white font-sans flex flex-col">
-        {isDemoLoginEnabled() && <DemoRoleBar />}
         <AdminApp />
         <ToastContainer toasts={toasts} onDismiss={removeToast} />
       </div>
@@ -78,7 +76,6 @@ const AppContent: React.FC = () => {
   if (activeAppTarget === 'customer') {
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
-        {isDemoLoginEnabled() && <DemoRoleBar />}
         <CustomerAppRoot />
         <ToastContainer toasts={toasts} onDismiss={removeToast} />
       </div>
@@ -89,7 +86,6 @@ const AppContent: React.FC = () => {
   if (activeAppTarget === 'technician') {
     return (
       <div className="min-h-screen bg-slate-900 text-white font-sans flex flex-col">
-        {isDemoLoginEnabled() && <DemoRoleBar />}
         <TechnicianAppRoot />
         <ToastContainer toasts={toasts} onDismiss={removeToast} />
       </div>
@@ -112,9 +108,6 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-100 selection:text-blue-900">
-      {/* Top Demo Bar for rapid switching between Customer, Partner & Admin apps */}
-      {isDemoLoginEnabled() && <DemoRoleBar />}
-
       {/* Main View Router */}
       <div className="flex-1 flex flex-col">
         {renderUnifiedView()}

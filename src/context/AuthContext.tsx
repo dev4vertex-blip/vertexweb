@@ -42,11 +42,20 @@ export const getDefaultDashboardForRole = (role: UserRole): string => {
     case 'CUSTOMER':
       return '/customer';
     case 'TECHNICIAN':
+    case 'PARTNER':
       return '/technician';
     case 'SALES':
+    case 'SALES_TEAM':
     case 'MANAGER':
     case 'FINANCE':
     case 'SUPER_ADMIN':
+    case 'ADMIN':
+    case 'MARKETING':
+    case 'OPERATIONS':
+    case 'SUPPORT':
+    case 'HR':
+    case 'PAYROLL':
+    case 'EMPLOYEE':
     default:
       return '/admin';
   }
@@ -106,26 +115,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           api.setToken(stored.token);
         }
 
+        // Reject any legacy demo tokens immediately
+        if (stored.token && stored.token.startsWith('vtx_local_')) {
+          authService.clearSession();
+          if (isMounted) {
+            setUser(null);
+          }
+          return;
+        }
+
         // Optimistically populate cached user to eliminate visual flicker
         if (isMounted) {
           setUser(stored.user);
         }
 
-        // User authentication promise chain to verify and synchronize active session
+        // Verify session validity with backend API
         try {
-          // If token is local offline/demo account, skip remote roundtrip
-          if (stored.token && stored.token.startsWith('vtx_local_')) {
-            if (isMounted) {
-              setUser(stored.user);
-            }
-          } else {
-            // Verify session validity with backend API
-            const verifiedUser = await authService.syncCurrentUser();
-            if (!isMounted) return;
+          const verifiedUser = await authService.syncCurrentUser();
+          if (!isMounted) return;
 
-            if (verifiedUser) {
-              setUser(verifiedUser);
-            }
+          if (verifiedUser) {
+            setUser(verifiedUser);
           }
 
           // If on /login, root path, or empty, navigate to the default dashboard for role

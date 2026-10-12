@@ -3,55 +3,119 @@ import crypto from 'crypto';
 import { getDb } from '../db/client.js';
 import { memoryStore } from '../db/memoryStore.js';
 
-const SECRET_KEY = process.env.JWT_SECRET || 'vertex_enterprise_session_secret_key_2026';
+export function getJwtSecret(): string {
+  if (process.env.NODE_ENV === 'production') {
+    const secret = process.env.JWT_SECRET?.trim();
+    if (!secret || secret.length < 16) {
+      throw new Error('[CRITICAL] Missing or invalid JWT_SECRET in production. Minimum 16 characters required.');
+    }
+    return secret;
+  }
+  return process.env.JWT_SECRET || 'vertex_dev_local_jwt_secret_only';
+}
+
+export type PlatformType = 'BUSINESS' | 'CUSTOMER' | 'PARTNER';
+
+export const PLATFORM_ROLES: Record<PlatformType, readonly string[]> = {
+  BUSINESS: [
+    'SUPER_ADMIN',
+    'ADMIN',
+    'MANAGER',
+    'FINANCE',
+    'SALES',
+    'SALES_TEAM',
+    'MARKETING',
+    'OPERATIONS',
+    'SUPPORT',
+    'HR',
+    'PAYROLL',
+    'EMPLOYEE',
+  ],
+  CUSTOMER: ['CUSTOMER'],
+  PARTNER: ['TECHNICIAN', 'PARTNER'],
+} as const;
+
+/**
+ * Determine authoritatively which platform a role belongs to.
+ * Throws error if role is unrecognized or unauthorized.
+ */
+export function resolvePlatformForRole(role: string): PlatformType {
+  const normRole = (role || '').trim().toUpperCase();
+  if (normRole === 'CUSTOMER') return 'CUSTOMER';
+  if (normRole === 'TECHNICIAN' || normRole === 'PARTNER') return 'PARTNER';
+  if ((PLATFORM_ROLES.BUSINESS as readonly string[]).includes(normRole)) return 'BUSINESS';
+  throw new Error(`Invalid or unrecognized role for platform assignment: ${role}`);
+}
 
 export interface TokenPayload {
   userId: string;
   role: string;
+  platform: PlatformType;
   expiresAt: number;
 }
 
 /**
- * Generate authenticated bearer token for user
+ * Generate authenticated bearer token for user with immutable platform claim.
+ * Supports flexible signatures:
+ * - generateAuthToken(userId, role, platform, expiresInMs)
+ * - generateAuthToken(userId, role, expiresInMs)
  */
-export function generateAuthToken(userId: string, role: string, expiresInMs: number = 24 * 60 * 60 * 1000): string {
-  const expiresAt = Date.now() + expiresInMs;
-  const payload: TokenPayload = { userId, role, expiresAt };
+export function generateAuthToken(
+  userId: string,
+  role: string,
+  platformOrExpiresIn?: PlatformType | number,
+  expiresInMs: number = 24 * 60 * 60 * 1000
+): string {
+  let resolvedPlatform: PlatformType;
+  let actualExpiresInMs: number;
+
+  if (typeof platformOrExpiresIn === 'number') {
+    resolvedPlatform = resolvePlatformForRole(role);
+    actualExpiresInMs = platformOrExpiresIn;
+  } else {
+    resolvedPlatform = platformOrExpiresIn || resolvePlatformForRole(role);
+    actualExpiresInMs = expiresInMs;
+  }
+
+  const secretKey = getJwtSecret();
+  const expiresAt = Date.now() + actualExpiresInMs;
+  const payload: TokenPayload = { userId, role, platform: resolvedPlatform, expiresAt };
   const json = JSON.stringify(payload);
   const base64 = Buffer.from(json).toString('base64url');
-  const hmac = crypto.createHmac('sha256', SECRET_KEY).update(base64).digest('base64url');
+  const hmac = crypto.createHmac('sha256', secretKey).update(base64).digest('base64url');
   return `vtx_${base64}.${hmac}`;
 }
 
 /**
- * Verify token and extract payload
+ * Verify token and extract payload with platform validation
  */
 export function verifyAuthToken(token: string): TokenPayload | null {
   try {
-    if (!token.startsWith('vtx_')) return null;
-
-    // Support demo/local session tokens
-    if (token.startsWith('vtx_local_')) {
-      const userId = token.replace('vtx_local_', '').trim();
-      const user = memoryStore.users.find((u) => u.id === userId || u.public_id === userId);
-      return {
-        userId: user ? user.id : userId || 'usr-admin-1',
-        role: user ? user.role : 'SUPER_ADMIN',
-        expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-      };
-    }
+    if (!token.startsWith('vtx_') || token.startsWith('vtx_local_')) return null;
 
     const raw = token.slice(4);
     const [base64, signature] = raw.split('.');
     if (!base64 || !signature) return null;
 
-    const expectedHmac = crypto.createHmac('sha256', SECRET_KEY).update(base64).digest('base64url');
+    const secretKey = getJwtSecret();
+    const expectedHmac = crypto.createHmac('sha256', secretKey).update(base64).digest('base64url');
     if (signature !== expectedHmac) return null;
 
     const json = Buffer.from(base64, 'base64url').toString('utf8');
     const payload: TokenPayload = JSON.parse(json);
 
     if (Date.now() > payload.expiresAt) return null;
+
+    // Validate platform claim is strictly one of the allowed platform types
+    if (!payload.platform || !['BUSINESS', 'CUSTOMER', 'PARTNER'].includes(payload.platform)) {
+      // Backward compatibility for tokens minted before platform isolation:
+      // Authoritatively derive from role if missing
+      if (payload.role) {
+        payload.platform = resolvePlatformForRole(payload.role);
+      } else {
+        return null;
+      }
+    }
 
     return payload;
   } catch {
@@ -90,6 +154,9 @@ export async function getFullUserById(userId: string) {
     );
 
     if (!userRes || userRes.rows.length === 0) {
+      if (process.env.NODE_ENV === 'production') {
+        return null;
+      }
       const memUser = memoryStore.users.find((u) => u.id === userId || u.public_id === userId);
       if (memUser) {
         let perms: string[];
@@ -122,6 +189,7 @@ export async function getFullUserById(userId: string) {
           permissions: perms,
           locationScopes: [],
           profile: null,
+          platform: resolvePlatformForRole(memUser.role),
         };
       }
       return null;
@@ -135,7 +203,7 @@ export async function getFullUserById(userId: string) {
       if (allPermRes && allPermRes.rows.length > 0) {
         rolePermissions = allPermRes.rows.map((r: any) => r.code);
       } else {
-        rolePermissions = memoryStore.permissions.map((p) => p.code);
+        rolePermissions = process.env.NODE_ENV === 'production' ? [] : memoryStore.permissions.map((p) => p.code);
       }
     } else {
       const permRes = await pglite.query(
@@ -197,11 +265,20 @@ export async function getFullUserById(userId: string) {
       createdAt: rawUser.created_at,
       updatedAt: rawUser.updated_at,
       lastLoginAt: rawUser.last_login_at,
-      permissions: permissions.length > 0 ? permissions : memoryStore.rolePermissions.filter(rp => rp.role_code === rawUser.role).map(rp => rp.permission_code),
+      permissions: permissions.length > 0
+        ? permissions
+        : (process.env.NODE_ENV === 'production'
+            ? []
+            : memoryStore.rolePermissions.filter(rp => rp.role_code === rawUser.role).map(rp => rp.permission_code)),
       locationScopes: scopeRes ? scopeRes.rows : [],
       profile,
+      platform: resolvePlatformForRole(rawUser.role),
     };
-  } catch {
+  } catch (err) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Database Auth Failure in Production]:', err);
+      return null;
+    }
     const memUser = memoryStore.users.find((u) => u.id === userId || u.public_id === userId);
     if (memUser) {
       const perms = memoryStore.rolePermissions

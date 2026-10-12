@@ -1,14 +1,137 @@
 import { Router } from 'express';
-import crypto from 'crypto';
-import { getDb } from '../../db/client.js';
-import { memoryStore, PaymentRecord } from '../../db/memoryStore.js';
-import { authenticateUser, AuthenticatedRequest, requirePermission, requireAnyPermission } from '../middleware.js';
+import { memoryStore } from '../../db/memoryStore.js';
+import { financeRepository } from '../repositories/financeRepository.js';
+import { financeService } from '../services/financeService.js';
+import {
+  authenticateUser,
+  AuthenticatedRequest,
+  requirePlatform,
+  requirePermission,
+  requireAnyPermission,
+} from '../middleware.js';
 import { logAuditEvent } from '../auth.js';
 
 const router = Router();
 
-// All payment management endpoints require authentication
+// All payment management endpoints require authentication and Business Hub platform guard
 router.use(authenticateUser);
+router.use(requirePlatform('BUSINESS'));
+
+/**
+ * GET /api/v1/payments/summary
+ * Financial overview for finance managers (total collected, verified, refunds, receivables, revenue)
+ */
+router.get('/summary', requirePermission('PAYMENT_VIEW'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const summary = await financeService.getSummary();
+    return res.json({
+      success: true,
+      data: summary,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to retrieve financial summary';
+    return res.status(500).json({ success: false, error: { code: 'FINANCIAL_SUMMARY_FAILED', message: msg } });
+  }
+});
+
+/**
+ * GET /api/v1/payments/ledger
+ * Complete double-entry general ledger entries for accounting and audit compliance
+ */
+router.get('/ledger', requireAnyPermission(['PAYMENT_VIEW', 'INVOICE_VIEW']), async (req: AuthenticatedRequest, res) => {
+  try {
+    const page = Math.max(1, parseInt((req.query.page as string) || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '50', 10)));
+    const account = (req.query.account as string || '').trim().toUpperCase();
+    const entryType = (req.query.entry_type as string || '').trim().toUpperCase();
+    const referenceType = (req.query.reference_type as string || '').trim().toUpperCase();
+    const offset = (page - 1) * limit;
+
+    const { entries, total, summary } = await financeService.listLedger({
+      account: account || undefined,
+      entryType: entryType || undefined,
+      referenceType: referenceType || undefined,
+      limit,
+      offset,
+    });
+
+    return res.json({
+      success: true,
+      data: entries,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+        totalDebit: summary.totalDebit,
+        totalCredit: summary.totalCredit,
+        isBalanced: Math.abs(summary.totalDebit - summary.totalCredit) < 0.05,
+      },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to retrieve ledger entries';
+    return res.status(500).json({ success: false, error: { code: 'LEDGER_FETCH_FAILED', message: msg } });
+  }
+});
+
+/**
+ * GET /api/v1/payments/invoices
+ * Retrieve authoritative invoices list
+ */
+router.get('/invoices', requirePermission('INVOICE_VIEW'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const page = Math.max(1, parseInt((req.query.page as string) || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt((req.query.limit as string) || '20', 10)));
+    const status = (req.query.status as string || '').trim().toUpperCase();
+    const search = (req.query.search as string || '').trim();
+    const customerId = (req.query.customer_id as string || '').trim();
+    const bookingId = (req.query.booking_id as string || '').trim();
+    const offset = (page - 1) * limit;
+
+    const { invoices, total } = await financeService.listInvoices({
+      customerId: customerId || undefined,
+      bookingId: bookingId || undefined,
+      status: status || undefined,
+      search: search || undefined,
+      limit,
+      offset,
+    });
+
+    return res.json({
+      success: true,
+      data: invoices,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to retrieve invoices';
+    return res.status(500).json({ success: false, error: { code: 'INVOICE_FETCH_FAILED', message: msg } });
+  }
+});
+
+/**
+ * GET /api/v1/payments/invoices/:id
+ * Retrieve specific invoice and itemized line breakdown
+ */
+router.get('/invoices/:id', requirePermission('INVOICE_VIEW'), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+    const invoiceData = await financeService.getInvoice(id);
+
+    return res.json({
+      success: true,
+      data: invoiceData.invoice,
+      items: invoiceData.items,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to retrieve invoice details';
+    return res.status(404).json({ success: false, error: { code: 'INVOICE_NOT_FOUND', message: msg } });
+  }
+});
 
 /**
  * GET /api/v1/payments
@@ -22,35 +145,19 @@ router.get('/', requirePermission('PAYMENT_VIEW'), async (req: AuthenticatedRequ
     const statusFilter = (req.query.status as string || '').trim().toUpperCase();
     const methodFilter = (req.query.method as string || '').trim().toUpperCase();
     const search = (req.query.search as string || '').trim().toLowerCase();
+    const offset = (page - 1) * limit;
 
-    let payments = [...memoryStore.payments];
-
-    if (statusFilter && statusFilter !== 'ALL') {
-      payments = payments.filter((p) => p.status.toUpperCase() === statusFilter);
-    }
-
-    if (methodFilter && methodFilter !== 'ALL') {
-      payments = payments.filter((p) => p.payment_method.toUpperCase() === methodFilter);
-    }
-
-    if (search) {
-      payments = payments.filter(
-        (p) =>
-          p.public_id.toLowerCase().includes(search) ||
-          p.booking_id.toLowerCase().includes(search) ||
-          (p.customer_name && p.customer_name.toLowerCase().includes(search)) ||
-          (p.payment_reference && p.payment_reference.toLowerCase().includes(search)) ||
-          (p.receipt_number && p.receipt_number.toLowerCase().includes(search))
-      );
-    }
-
-    const total = payments.length;
-    const startIndex = (page - 1) * limit;
-    const paginated = payments.slice(startIndex, startIndex + limit);
+    const { payments, total } = await financeRepository.listPayments({
+      status: statusFilter,
+      method: methodFilter,
+      search,
+      limit,
+      offset,
+    });
 
     return res.json({
       success: true,
-      data: paginated,
+      data: payments,
       meta: {
         total,
         page,
@@ -72,7 +179,7 @@ router.get('/', requirePermission('PAYMENT_VIEW'), async (req: AuthenticatedRequ
 router.get('/:id', requirePermission('PAYMENT_VIEW'), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const payment = memoryStore.payments.find((p) => p.id === id || p.public_id === id);
+    const payment = await financeRepository.getPaymentById(id);
 
     if (!payment) {
       return res.status(404).json({
@@ -93,7 +200,7 @@ router.get('/:id', requirePermission('PAYMENT_VIEW'), async (req: AuthenticatedR
 
 /**
  * POST /api/v1/payments/collect
- * Collect payment on-site, in-branch, or digitally
+ * Collect payment on-site, in-branch, or digitally with strict transactional integrity
  * Supported roles: Sales Team, Technicians, Managers, Finance, Super Admin
  * Required permission: PAYMENT_COLLECT (or PAYMENT_CREATE)
  */
@@ -102,6 +209,7 @@ router.post('/collect', requireAnyPermission(['PAYMENT_COLLECT', 'PAYMENT_CREATE
     const currentUser = req.user;
     const {
       booking_id,
+      invoice_id,
       customer_id,
       customer_name,
       customer_phone,
@@ -126,72 +234,61 @@ router.post('/collect', requireAnyPermission(['PAYMENT_COLLECT', 'PAYMENT_CREATE
       });
     }
 
-    // Check idempotency if key provided
-    const key = idempotency_key || req.headers['x-idempotency-key'] as string;
-    if (key) {
-      const existing = memoryStore.payments.find((p) => p.idempotency_key === key);
-      if (existing) {
-        return res.status(200).json({
-          success: true,
-          message: 'Payment already recorded (idempotent replay).',
-          data: existing,
-          isDuplicate: true,
-        });
-      }
-    }
+    const key = idempotency_key || (req.headers['x-idempotency-key'] as string);
 
-    // Resolve booking details if provided
-    let resolvedCustomerName = customer_name || 'Customer';
-    let resolvedCustomerPhone = customer_phone || '+91 98000 00000';
-    let resolvedCustomerId = customer_id || 'cust-1';
-
-    if (booking_id) {
-      const booking = memoryStore.bookings.find((b) => b.id === booking_id || b.public_id === booking_id);
-      if (booking) {
-        resolvedCustomerName = booking.customer_name || resolvedCustomerName;
-        resolvedCustomerPhone = booking.customer_phone || resolvedCustomerPhone;
-        resolvedCustomerId = booking.customer_id || resolvedCustomerId;
-
-        // Mark booking payment status as PAID if collected
-        booking.payment_status = 'PAID';
-        booking.updated_at = new Date().toISOString();
-      }
-    }
-
-    const nextIdNum = memoryStore.payments.length + 1;
-    const publicId = `VXPY-${String(nextIdNum).padStart(6, '0')}`;
-    const newPaymentId = `pay-${crypto.randomUUID()}`;
-    const receiptNum = `RCP-${new Date().getFullYear()}-${String(nextIdNum + 100).padStart(5, '0')}`;
-
-    const newPayment: PaymentRecord = {
-      id: newPaymentId,
-      public_id: publicId,
-      booking_id: booking_id || 'VTX-DIRECT',
-      customer_id: resolvedCustomerId,
-      customer_name: resolvedCustomerName,
-      customer_phone: resolvedCustomerPhone,
+    // Collect payment with transactional locks, overpayment verification, invoice updates, and balanced double-entry ledger
+    const { payment, invoice, isDuplicate } = await financeService.collectPayment({
+      bookingId: booking_id,
+      invoiceId: invoice_id,
+      customerId: customer_id,
+      customerName: customer_name,
+      customerPhone: customer_phone,
       amount: Number(amount),
-      currency: 'INR',
-      payment_method: payment_method.toUpperCase(),
-      payment_reference: payment_reference || `REF-${Date.now().toString().slice(-8)}`,
-      status: payment_method.toUpperCase() === 'CASH' ? 'COLLECTED' : 'VERIFIED',
-      collected_by: currentUser.id,
-      collected_by_name: currentUser.name,
-      collected_at: new Date().toISOString(),
+      paymentMethod: payment_method.toUpperCase(),
+      paymentReference: payment_reference,
+      collectedBy: currentUser.id,
+      collectedByName: currentUser.name,
       notes: notes ? notes.trim() : 'Payment collected on-site.',
-      receipt_number: receiptNum,
-      verified_by: payment_method.toUpperCase() === 'CASH' ? null : currentUser.id,
-      verified_at: payment_method.toUpperCase() === 'CASH' ? null : new Date().toISOString(),
+      idempotencyKey: key || undefined,
+    });
+
+    if (isDuplicate) {
+      return res.status(200).json({
+        success: true,
+        message: 'Payment already recorded (idempotent replay).',
+        data: payment,
+        isDuplicate: true,
+      });
+    }
+
+    // In-memory sync for backward compatibility with non-migrated UI
+    memoryStore.payments.unshift({
+      id: payment.id,
+      public_id: payment.public_id,
+      booking_id: payment.booking_id || 'VTX-DIRECT',
+      customer_id: payment.customer_id || 'cust-1',
+      customer_name: payment.customer_name,
+      customer_phone: payment.customer_phone || '+91 98000 00000',
+      amount: Number(payment.amount),
+      currency: payment.currency,
+      payment_method: payment.payment_method as any,
+      payment_reference: payment.payment_reference || '',
+      status: payment.status as any,
+      collected_by: payment.collected_by,
+      collected_by_name: payment.collected_by_name,
+      collected_at: payment.collected_at,
+      notes: payment.notes || '',
+      receipt_number: payment.receipt_number || '',
+      verified_by: payment.verified_by,
+      verified_at: payment.verified_at,
       refund_reason: null,
       refund_status: 'NONE',
       refund_amount: null,
       refund_approved_by: null,
-      idempotency_key: key || null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    memoryStore.payments.unshift(newPayment);
+      idempotency_key: payment.idempotency_key,
+      created_at: payment.created_at,
+      updated_at: payment.updated_at,
+    });
 
     // Audit Log
     await logAuditEvent({
@@ -200,13 +297,14 @@ router.post('/collect', requireAnyPermission(['PAYMENT_COLLECT', 'PAYMENT_CREATE
       userRole: currentUser.role,
       action: 'PAYMENT_COLLECTED',
       entity: 'PAYMENT',
-      entityId: newPayment.id,
+      entityId: payment.id,
       newValue: {
-        public_id: publicId,
-        amount: newPayment.amount,
-        method: newPayment.payment_method,
-        booking_id: newPayment.booking_id,
-        receipt_number: newPayment.receipt_number,
+        public_id: payment.public_id,
+        amount: payment.amount,
+        method: payment.payment_method,
+        booking_id: payment.booking_id,
+        invoice_id: invoice?.id,
+        receipt_number: payment.receipt_number,
       },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
@@ -214,8 +312,9 @@ router.post('/collect', requireAnyPermission(['PAYMENT_COLLECT', 'PAYMENT_CREATE
 
     return res.status(201).json({
       success: true,
-      message: `Payment of ₹${newPayment.amount} recorded successfully. Receipt #${newPayment.receipt_number}.`,
-      data: newPayment,
+      message: `Payment of ₹${payment.amount} recorded successfully. Receipt #${payment.receipt_number}.`,
+      data: payment,
+      invoice,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to collect payment';
@@ -232,7 +331,7 @@ router.post('/:id/verify', requireAnyPermission(['PAYMENT_VERIFY', 'PAYMENT_RECO
   try {
     const { id } = req.params;
     const currentUser = req.user;
-    const payment = memoryStore.payments.find((p) => p.id === id || p.public_id === id);
+    const payment = await financeRepository.getPaymentById(id);
 
     if (!payment) {
       return res.status(404).json({
@@ -248,11 +347,15 @@ router.post('/:id/verify', requireAnyPermission(['PAYMENT_VERIFY', 'PAYMENT_RECO
       });
     }
 
-    const previousStatus = payment.status;
-    payment.status = 'VERIFIED';
-    payment.verified_by = currentUser.id;
-    payment.verified_at = new Date().toISOString();
-    payment.updated_at = new Date().toISOString();
+    const verified = await financeService.verifyPayment(payment.id, currentUser.id);
+
+    // In-memory sync
+    const memPayment = memoryStore.payments.find((p) => p.id === payment.id || p.public_id === payment.public_id);
+    if (memPayment) {
+      memPayment.status = 'VERIFIED';
+      memPayment.verified_by = currentUser.id;
+      memPayment.verified_at = new Date().toISOString();
+    }
 
     await logAuditEvent({
       userId: currentUser.id,
@@ -261,8 +364,8 @@ router.post('/:id/verify', requireAnyPermission(['PAYMENT_VERIFY', 'PAYMENT_RECO
       action: 'PAYMENT_VERIFIED',
       entity: 'PAYMENT',
       entityId: payment.id,
-      oldValue: { status: previousStatus },
-      newValue: { status: payment.status, verified_by: currentUser.id },
+      oldValue: { status: payment.status },
+      newValue: { status: 'VERIFIED', verified_by: currentUser.id },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
     });
@@ -270,7 +373,7 @@ router.post('/:id/verify', requireAnyPermission(['PAYMENT_VERIFY', 'PAYMENT_RECO
     return res.json({
       success: true,
       message: `Payment ${payment.public_id} successfully verified and reconciled.`,
-      data: payment,
+      data: verified,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to verify payment';
@@ -289,7 +392,7 @@ router.post('/:id/refund-request', requireAnyPermission(['PAYMENT_REFUND_REQUEST
     const currentUser = req.user;
     const { reason, refund_amount } = req.body;
 
-    const payment = memoryStore.payments.find((p) => p.id === id || p.public_id === id);
+    const payment = await financeRepository.getPaymentById(id);
     if (!payment) {
       return res.status(404).json({
         success: false,
@@ -304,18 +407,23 @@ router.post('/:id/refund-request', requireAnyPermission(['PAYMENT_REFUND_REQUEST
       });
     }
 
-    const requestedAmount = refund_amount ? Number(refund_amount) : payment.amount;
-    if (requestedAmount <= 0 || requestedAmount > payment.amount) {
+    const requestedAmount = refund_amount ? Number(refund_amount) : Number(payment.amount);
+    if (requestedAmount <= 0 || requestedAmount > Number(payment.amount)) {
       return res.status(400).json({
         success: false,
         error: { code: 'INVALID_REFUND_AMOUNT', message: `Refund amount must be between ₹1 and ₹${payment.amount}.` },
       });
     }
 
-    payment.refund_status = 'REQUESTED';
-    payment.refund_reason = reason.trim();
-    payment.refund_amount = requestedAmount;
-    payment.updated_at = new Date().toISOString();
+    const updated = await financeService.requestRefund(payment.id, requestedAmount, reason.trim());
+
+    // In-memory sync
+    const memPayment = memoryStore.payments.find((p) => p.id === payment.id || p.public_id === payment.public_id);
+    if (memPayment) {
+      memPayment.refund_status = 'REQUESTED';
+      memPayment.refund_reason = reason.trim();
+      memPayment.refund_amount = requestedAmount;
+    }
 
     await logAuditEvent({
       userId: currentUser.id,
@@ -326,7 +434,7 @@ router.post('/:id/refund-request', requireAnyPermission(['PAYMENT_REFUND_REQUEST
       entityId: payment.id,
       newValue: {
         refund_amount: requestedAmount,
-        reason: payment.refund_reason,
+        reason: reason.trim(),
       },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
@@ -335,7 +443,7 @@ router.post('/:id/refund-request', requireAnyPermission(['PAYMENT_REFUND_REQUEST
     return res.json({
       success: true,
       message: `Refund of ₹${requestedAmount} requested for payment ${payment.public_id}. Awaiting Finance Manager approval.`,
-      data: payment,
+      data: updated,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to request refund';
@@ -345,14 +453,14 @@ router.post('/:id/refund-request', requireAnyPermission(['PAYMENT_REFUND_REQUEST
 
 /**
  * POST /api/v1/payments/:id/refund-approve
- * Finance Approver authorizes the refund
+ * Finance Approver authorizes the refund (transactional balance adjustments & ledger posting)
  * Required permission: PAYMENT_REFUND_APPROVE (or PAYMENT_REFUND)
  */
 router.post('/:id/refund-approve', requireAnyPermission(['PAYMENT_REFUND_APPROVE', 'PAYMENT_REFUND']), async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
     const currentUser = req.user;
-    const payment = memoryStore.payments.find((p) => p.id === id || p.public_id === id);
+    const payment = await financeRepository.getPaymentById(id);
 
     if (!payment) {
       return res.status(404).json({
@@ -368,10 +476,15 @@ router.post('/:id/refund-approve', requireAnyPermission(['PAYMENT_REFUND_APPROVE
       });
     }
 
-    payment.refund_status = 'APPROVED';
-    payment.status = 'REFUNDED';
-    payment.refund_approved_by = currentUser.id;
-    payment.updated_at = new Date().toISOString();
+    const updated = await financeService.approveRefund(payment.id, currentUser.id);
+
+    // In-memory sync
+    const memPayment = memoryStore.payments.find((p) => p.id === payment.id || p.public_id === payment.public_id);
+    if (memPayment) {
+      (memPayment as any).refund_status = 'PROCESSED';
+      memPayment.status = 'REFUNDED';
+      memPayment.refund_approved_by = currentUser.id;
+    }
 
     await logAuditEvent({
       userId: currentUser.id,
@@ -381,9 +494,9 @@ router.post('/:id/refund-approve', requireAnyPermission(['PAYMENT_REFUND_APPROVE
       entity: 'PAYMENT',
       entityId: payment.id,
       newValue: {
-        refund_amount: payment.refund_amount,
+        refund_amount: updated.refund_amount,
         approved_by: currentUser.id,
-        status: payment.status,
+        status: 'REFUNDED',
       },
       ipAddress: req.ip,
       userAgent: req.headers['user-agent'],
@@ -391,8 +504,8 @@ router.post('/:id/refund-approve', requireAnyPermission(['PAYMENT_REFUND_APPROVE
 
     return res.json({
       success: true,
-      message: `Refund for payment ${payment.public_id} of ₹${payment.refund_amount} approved and processed.`,
-      data: payment,
+      message: `Refund for payment ${payment.public_id} of ₹${updated.refund_amount} approved and processed.`,
+      data: updated,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Failed to approve refund';
